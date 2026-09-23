@@ -4546,6 +4546,24 @@ mod tests {
     }
 
     #[test]
+    fn windows_process_tree_requires_dsh_driver_argv() {
+        let shell = test_entry(10, 1, "powershell.exe", &["powershell.exe"]);
+        let standalone = test_entry(30, 10, "dsh.exe", &["dsh.exe", "--profile", "web"]);
+        let job = super::select_pane_foreground_job(10, &[shell.clone(), standalone.clone()])
+            .expect("shell job");
+        assert_eq!(job.process_group_id, 10);
+
+        let driver = test_entry(20, 10, "herdr.exe", &[r"C:\Herdr\herdr.exe", "agent", "dsh"]);
+        let child = test_entry(21, 20, "dsh.exe", &["dsh.exe", "--profile", "acp"]);
+        let job = super::select_pane_foreground_job(10, &[shell, driver, child, standalone])
+            .expect("driver job");
+        assert_eq!(
+            crate::detect::identify_agent_process_in_job(&job),
+            Some((crate::detect::Agent::Dsh, "dsh".into(), 20))
+        );
+    }
+
+    #[test]
     fn windows_process_tree_still_inspects_unusual_escaped_argv0() {
         let snapshot = super::ProcessSnapshot::new(vec![
             test_entry(10, 1, "bash.exe", &[r"C:\Program Files\Git\bin\bash.exe"]),

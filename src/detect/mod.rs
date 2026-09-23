@@ -65,10 +65,11 @@ pub enum Agent {
     Letta,
     Maki,
     Muse,
+    Dsh,
 }
 
 impl Agent {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Pi,
         Self::Claude,
         Self::Codex,
@@ -93,6 +94,7 @@ impl Agent {
         Self::Letta,
         Self::Maki,
         Self::Muse,
+        Self::Dsh,
     ];
 
     pub const SCREEN_MANIFEST_AGENTS: [Self; 22] = [
@@ -147,6 +149,7 @@ pub fn agent_label(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::Dsh => "dsh",
     }
 }
 
@@ -182,6 +185,7 @@ pub fn interactive_agent_executable(agent: Agent) -> &'static str {
         Agent::Letta => "letta",
         Agent::Maki => "maki",
         Agent::Muse => "muse",
+        Agent::Dsh => "herdr",
     }
 }
 
@@ -198,6 +202,7 @@ pub(crate) fn parse_canonical_agent_label(label: &str) -> Option<Agent> {
 fn lookup_agent(name: &str) -> Option<Agent> {
     let name = path_basename(name);
     match name {
+        "dsh" => Some(Agent::Dsh),
         "pi" => Some(Agent::Pi),
         "claude" | "claude-code" => Some(Agent::Claude),
         "codex" => Some(Agent::Codex),
@@ -243,7 +248,8 @@ fn is_muse_versioned_binary(name: &str) -> bool {
 /// Identify which agent is running from the process name.
 /// Returns `None` for plain shells or unrecognized programs.
 pub fn identify_agent(process_name: &str) -> Option<Agent> {
-    parse_agent_label(process_name)
+    // The label is valid, but only driver argv can identify a DSH process.
+    parse_agent_label(process_name).filter(|&agent| agent != Agent::Dsh)
 }
 
 pub fn identify_agent_in_job(job: &crate::platform::ForegroundJob) -> Option<(Agent, String)> {
@@ -259,24 +265,17 @@ pub fn identify_agent_process_in_job(
         .iter()
         .find(|process| process.pid == job.process_group_id)
     {
-        let candidate = normalized_process_name(process);
-        if let Some(agent) = identify_agent(&candidate) {
-            if agent != Agent::Letta || is_interactive_letta_process(process) {
-                return Some((agent, candidate, process.pid));
-            }
+        if let Some((agent, candidate)) = identify_job_process(process) {
+            return Some((agent, candidate, process.pid));
         }
     }
 
     let mut best: Option<(u8, Agent, String, u32)> = None;
 
     for process in &job.processes {
-        let candidate = normalized_process_name(process);
-        let Some(agent) = identify_agent(&candidate) else {
+        let Some((agent, candidate)) = identify_job_process(process) else {
             continue;
         };
-        if agent == Agent::Letta && !is_interactive_letta_process(process) {
-            continue;
-        }
         let score = process_priority(process, &candidate);
 
         match &best {
@@ -332,6 +331,7 @@ pub(crate) fn full_lifecycle_hook_authority(source: &str, agent_label: &str) -> 
         (source, agent_label),
         ("herdr:pi", "pi")
             | ("herdr:omp", "omp")
+            | ("herdr:dsh", "dsh")
             | ("herdr:mastracode", "mastracode")
             | ("herdr:opencode", "opencode")
             | ("herdr:kilo", "kilo")
@@ -376,6 +376,27 @@ pub fn foreground_process_group_id(child_pid: u32) -> Option<u32> {
 /// True when the pane's own shell is at its prompt with nothing running in it.
 pub fn pane_shell_is_idle(child_pid: u32) -> bool {
     crate::platform::available_pane_shell(child_pid).is_some()
+}
+
+fn identify_job_process(process: &crate::platform::ForegroundProcess) -> Option<(Agent, String)> {
+    if is_dsh_driver(process) {
+        return Some((Agent::Dsh, agent_label(Agent::Dsh).to_owned()));
+    }
+    let candidate = normalized_process_name(process);
+    let agent = identify_agent(&candidate)?;
+    if agent == Agent::Letta && !is_interactive_letta_process(process) {
+        return None;
+    }
+    Some((agent, candidate))
+}
+
+fn is_dsh_driver(process: &crate::platform::ForegroundProcess) -> bool {
+    process.argv.as_deref().is_some_and(|argv| {
+        argv.len() >= 3
+            && argv[1] == "agent"
+            && argv[2] == "dsh"
+            && normalized_agent_lookup_name(path_basename(&argv[0])) == "herdr"
+    })
 }
 
 fn normalized_process_name(process: &crate::platform::ForegroundProcess) -> String {
@@ -889,7 +910,7 @@ fn resolved_agent_name_from_path_token(token: &str) -> Option<String> {
 }
 
 fn agent_name_from_basename(basename: &str) -> Option<String> {
-    let agent = parse_agent_label(basename)?;
+    let agent = identify_agent(basename)?;
     Some(agent_label(agent).to_string())
 }
 
@@ -1110,6 +1131,7 @@ mod tests {
             (Agent::Letta, "letta"),
             (Agent::Maki, "maki"),
             (Agent::Muse, "muse"),
+            (Agent::Dsh, "herdr"),
         ];
         assert_eq!(expected.len(), Agent::ALL.len());
         for (agent, executable) in expected {
@@ -1415,6 +1437,47 @@ mod tests {
             )],
         };
         assert_eq!(identify_agent_in_job(&lookalike), None);
+    }
+
+    #[test]
+    fn dsh_control_requires_herdr_driver_not_a_web_or_acp_process() {
+        assert_eq!(identify_agent("dsh"), None);
+        for argv in [
+            vec!["dsh", "--profile", "web"],
+            vec!["dsh", "--profile", "acp"],
+            vec!["herdr", "agent", "list"],
+        ] {
+            let job = crate::platform::ForegroundJob {
+                process_group_id: 42,
+                processes: vec![foreground_process(42, argv[0], &argv)],
+            };
+            assert_eq!(identify_agent_in_job(&job), None);
+        }
+        let job = crate::platform::ForegroundJob {
+            process_group_id: 42,
+            processes: vec![foreground_process(42, "herdr", &["/tmp/herdr", "agent", "dsh"])],
+        };
+        assert_eq!(
+            identify_agent_in_job(&job),
+            Some((Agent::Dsh, "dsh".into()))
+        );
+        assert_eq!(
+            identify_agent_process_in_job(&job),
+            Some((Agent::Dsh, "dsh".into(), 42))
+        );
+        let job = crate::platform::ForegroundJob {
+            process_group_id: 42,
+            processes: vec![
+                foreground_process(42, "dsh", &["dsh", "--profile", "acp"]),
+                foreground_process(43, "herdr", &["/tmp/herdr", "agent", "dsh"]),
+            ],
+        };
+        assert_eq!(
+            identify_agent_process_in_job(&job),
+            Some((Agent::Dsh, "dsh".into(), 43))
+        );
+        assert!(full_lifecycle_hook_authority("herdr:dsh", "dsh"));
+        assert!(!full_lifecycle_hook_authority("custom:dsh", "dsh"));
     }
 
     #[test]

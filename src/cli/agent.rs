@@ -61,6 +61,7 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         Operation::Start(params) => agent_start(params),
         Operation::Attach(params) => agent_attach(params),
         Operation::Explain(params) => agent_explain(params),
+        Operation::Dsh(invocation) => super::dsh::run(invocation),
     }
 }
 

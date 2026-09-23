@@ -722,7 +722,9 @@ pub(crate) fn parse_agent_env_hint(environ: &[u8]) -> Option<crate::detect::Agen
         let Some(value) = record.strip_prefix(b"HERDR_AGENT=") else {
             continue;
         };
-        return crate::detect::parse_agent_label(std::str::from_utf8(value).ok()?);
+        // DSH identity belongs to the Herdr driver and requires its argv.
+        return crate::detect::parse_agent_label(std::str::from_utf8(value).ok()?)
+            .filter(|&agent| agent != crate::detect::Agent::Dsh);
     }
     None
 }
@@ -959,6 +961,12 @@ mod tests {
     fn parse_agent_env_hint_ignores_missing_or_unknown_agents() {
         assert_eq!(parse_agent_env_hint(b"PATH=/bin\0TERM=xterm\0"), None);
         assert_eq!(parse_agent_env_hint(b"HERDR_AGENT=not-an-agent\0"), None);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn parse_agent_env_hint_does_not_identify_dsh() {
+        assert_eq!(parse_agent_env_hint(b"HERDR_AGENT=dsh\0"), None);
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]

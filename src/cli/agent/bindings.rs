@@ -1,4 +1,6 @@
-use clap::{ArgGroup, ArgMatches, Command};
+use std::path::PathBuf;
+
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 use crate::api::schema::agents::{
     AgentPromptProjection, AgentPromptWaitProjection, AgentReadProjection, AgentRenameProjection,
@@ -8,6 +10,7 @@ use crate::api::schema::{
     AgentPromptParams, AgentReadParams, AgentRenameParams, AgentSendKeysParams, AgentStartParams,
     AgentStatus, AgentTarget, AgentWaitParams, ReadFormat, ReadSource, READ_FORMATS, READ_SOURCES,
 };
+use crate::cli::dsh::{self, Invocation, Options};
 pub(crate) use crate::cli::projection::optional_text;
 use crate::cli::projection::{
     choices, cli_projection, parse_choice, Choice, Field, Input, ParseError,
@@ -224,6 +227,37 @@ cli_projection! {
     }
 }
 
+fn dsh_text(name: &'static str, value_name: &'static str) -> Input<Option<String>> {
+    Input::value(name, value_name, |slot, value| {
+        dsh::validate_option_value(value)?;
+        *slot = Some(value.to_owned());
+        Ok(())
+    })
+}
+
+cli_projection! {
+    DshProjection for Options {
+        catalog => Field::new(false).input(Input::flag("catalog", |slot, _| {
+            *slot = true;
+            Ok(())
+        }).help("Inspect native configuration in an empty ACP session")),
+        binary => Field::new(String::from("dsh")).input(Input::value("dsh-bin", "PATH", |slot, value| {
+            dsh::validate_option_value(value)?;
+            *slot = value.to_owned();
+            Ok(())
+        }).path().help("External DSH executable")),
+        resume => Field::new(None).input(dsh_text("resume", "SESSION_ID").help("Resume an inactive native session")),
+        journal => Field::new(None).input(Input::value("journal", "PATH", |slot, value| {
+            dsh::validate_option_value(value)?;
+            *slot = Some(PathBuf::from(value));
+            Ok(())
+        }).path().help("Write worker evidence to this absolute path")),
+        initial => Field::new(None).input(dsh_text("initial-prompt", "TEXT").help("Submit one prompt when starting a new session")),
+        model => Field::new(None).input(dsh_text("model", "VALUE").help("Select an advertised model")),
+        effort => Field::new(None).input(dsh_text("effort", "VALUE").help("Select an advertised reasoning effort")),
+    }
+}
+
 pub(crate) enum Operation {
     List,
     Get(AgentTarget),
@@ -236,6 +270,7 @@ pub(crate) enum Operation {
     Start(AgentStartParams),
     Attach(Attach),
     Explain(Explain),
+    Dsh(Invocation),
 }
 
 fn leaf(name: &'static str, arguments: Vec<clap::Arg>, about: &'static str) -> Command {
@@ -270,6 +305,10 @@ pub(crate) fn command() -> Command {
             .override_usage("herdr agent attach <TARGET> [OPTIONS]"))
         .subcommand(leaf("explain", ExplainProjection::arguments(), "Explain agent detection state")
             .group(ArgGroup::new("explain_source").args(["target", "file"]).required(true)))
+        .subcommand(leaf("dsh", DshProjection::arguments(), "Run an external DSH ACP worker in this terminal")
+            .arg(Arg::new("describe").long("describe").action(ArgAction::Count).exclusive(true)
+                .help("Print the driver contract as JSON"))
+            .after_help("--describe must be used alone. --catalog cannot be combined with --resume, --initial-prompt, or --journal. --resume cannot be combined with --initial-prompt."))
 }
 
 pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError> {
@@ -298,6 +337,15 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError
         "start" => Operation::Start(AgentStartProjection::from_matches(matches)?),
         "attach" => Operation::Attach(AttachProjection::from_matches(matches)?),
         "explain" => Operation::Explain(ExplainProjection::from_matches(matches)?),
+        "dsh" => Operation::Dsh(match matches.get_count("describe") {
+            0 => {
+                let options = DshProjection::from_matches(matches)?;
+                options.validate()?;
+                Invocation::Run(options)
+            }
+            1 => Invocation::Describe,
+            _ => return Err(ParseError::Usage("--describe must be used alone".into())),
+        }),
         _ => return Err(ParseError::Usage(format!("unknown agent command: {name}"))),
     })
 }

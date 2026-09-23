@@ -294,7 +294,7 @@ fn validate_machine_command(args: &[String]) -> Result<(), String> {
     let supported = match command {
         "workspace" | "worktree" | "tab" | "pane" | "notification" => true,
         "agent" => {
-            subcommand != "attach"
+            !matches!(subcommand, "attach" | "dsh")
                 && !(subcommand == "explain"
                     && args[3..]
                         .iter()
@@ -447,6 +447,7 @@ mod tests {
             &["session", "delete", "default"],
             &["server", "live-handoff"],
             &["agent", "attach", "w4:p1"],
+            &["agent", "dsh", "--catalog"],
             &["terminal", "attach", "w4:p1"],
             &["terminal", "session", "control", "w4:p1"],
             &["plugin", "install", "./plugin"],
@@ -461,6 +462,7 @@ mod tests {
         for command in [
             &["agent", "list"][..],
             &["agent", "wait", "w4:p1"],
+            &["agent", "start", "worker", "--kind", "dsh", "--pane", "w4:p1"],
             &["pane", "split", "w4:p1", "--direction", "right"],
             &["workspace", "list"],
             &["worktree", "create", "--branch", "feature"],

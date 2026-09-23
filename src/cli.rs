@@ -22,6 +22,7 @@ macro_rules! println {
 pub(crate) mod agent;
 mod api;
 mod completion;
+mod dsh;
 mod integration;
 mod machine;
 pub(crate) mod notification;

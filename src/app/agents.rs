@@ -194,7 +194,18 @@ impl App {
         let shell_name = available_shell_name(runtime)
             .ok_or_else(|| AgentStartError::TargetBusy(params.pane_id.clone()))?;
 
-        let mut argv = vec![crate::detect::interactive_agent_executable(kind).to_string()];
+        let mut argv = if kind == crate::detect::Agent::Dsh {
+            vec![
+                std::env::current_exe()
+                    .map_err(|error| AgentStartError::InputFailed(error.to_string()))?
+                    .to_string_lossy()
+                    .into_owned(),
+                "agent".into(),
+                "dsh".into(),
+            ]
+        } else {
+            vec![crate::detect::interactive_agent_executable(kind).to_string()]
+        };
         argv.extend(params.args);
         let command = crate::platform::interactive_shell_command(&argv, &shell_name)
             .ok_or(AgentStartError::InvalidArgument)?;
