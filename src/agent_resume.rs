@@ -146,6 +146,15 @@ pub fn plan(source: &str, agent: &str, session_ref: &AgentSessionRef) -> Option<
                 session_ref.value.clone(),
             ]
         }
+        ("herdr:dsh", "dsh", AgentSessionRefKind::Id) => {
+            vec![
+                std::env::current_exe().ok()?.to_string_lossy().into_owned(),
+                "agent".into(),
+                "dsh".into(),
+                "--resume".into(),
+                session_ref.value.clone(),
+            ]
+        }
         ("herdr:codex", "codex", AgentSessionRefKind::Id) => {
             vec!["codex".into(), "resume".into(), session_ref.value.clone()]
         }
@@ -265,7 +274,8 @@ pub fn dedupe_key(source: &str, agent: &str, session_ref: &AgentSessionRef) -> S
 pub(crate) fn is_official_agent_source(source: &str, agent: &str) -> bool {
     matches!(
         (source, agent),
-        ("herdr:claude", "claude")
+        ("herdr:dsh", "dsh")
+            | ("herdr:claude", "claude")
             | ("herdr:codex", "codex")
             | ("herdr:copilot", "copilot")
             | ("herdr:devin", "devin")

@@ -400,3 +400,40 @@ herdr pane read w1:p1 --source recent --lines 50
 ```
 
 If integration state looks wrong, first confirm the agent is running inside Herdr and that the relevant hook or plugin was installed for the same user account.
+
+
+## DSH
+
+DSH workers use a bundled terminal client for the external DeepSeek Harness ACP
+profile. Install and configure DSH separately; Herdr does not bundle its runtime
+or credentials. Verify both interfaces before launch:
+
+```bash
+herdr agent dsh --describe
+dsh --profile acp --help
+herdr agent start researcher --kind dsh --pane <available-pane-id>
+```
+
+The driver owns one persistent DSH session and reports its native identity and
+lifecycle through the existing agent API. `agent prompt` supports multiline text.
+Native permission requests appear as blocked with explicit allow-once/reject
+choices; Herdr never answers them automatically. Ctrl-C cancels active work and
+`/exit` closes the session while retaining its history. Restore resumes the same
+inactive session without replaying an initial prompt. Closing a client does not
+close its server-owned worker pane.
+
+`herdr agent dsh` also accepts `--model`, `--effort`, `--dsh-bin`, `--resume`,
+`--journal`, and `--initial-prompt`. Model and effort must match options advertised
+by the installed ACP runtime. A journal records native prompt settlement for
+controllers; a terminal echo or successful prompt write is not that proof.
+Resume and initial-prompt cannot be combined. This integration does not attach to
+an already running DSH web session, implement compaction, or update DSH.
+
+`herdr agent dsh --catalog` prints the native ACP configuration options as JSON
+without a terminal or generation prompt. Add `--model` to inspect that route's
+effort levels, and `--effort` to validate a choice. Inspection creates and closes
+one empty native session, which DSH may retain, but creates no Herdr pane,
+launch record, or worker journal. It cannot be combined with `--resume`,
+`--journal`, or `--initial-prompt`. Catalog membership does not prove quota or
+successful generation. Worker journals also retain the configured model and
+effort with their native selection timestamp.

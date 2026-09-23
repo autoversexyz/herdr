@@ -156,6 +156,17 @@ impl App {
         let Some(expected_agent) = terminal.effective_known_agent() else {
             return Err(agent_not_ready(id, &params.target));
         };
+        // DSH's ACP client admits one turn at a time. Reject before writing;
+        // terminal bytes while it is awaiting a response are not a prompt queue.
+        if expected_agent == crate::detect::Agent::Dsh
+            && terminal.state != crate::detect::AgentState::Idle
+        {
+            return Err(encode_error(
+                id,
+                "agent_busy",
+                "DSH must be idle before receiving another prompt",
+            ));
+        }
         if terminal.managed_agent_launch_pending() {
             return Err(agent_not_ready(id, &params.target));
         }
@@ -608,6 +619,32 @@ mod tests {
         );
         let error: crate::api::schema::ErrorResponse = serde_json::from_str(&rejected).unwrap();
         assert_eq!(error.error.code, "agent_not_found");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn dsh_busy_prompt_is_rejected_without_terminal_input() {
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_agent_name("researcher".into());
+        terminal.set_detected_state(Some(Agent::Dsh), AgentState::Working);
+        let (runtime, mut rx) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        app.state.insert_test_runtime(pane_id, runtime);
+        let response = run_deferred_agent_prompt(
+            &mut app,
+            "req",
+            AgentPromptParams {
+                target: "researcher".into(),
+                text: "second task".into(),
+                wait: None,
+            },
+        );
+        let error: crate::api::schema::ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "agent_busy");
         assert!(rx.try_recv().is_err());
     }
 

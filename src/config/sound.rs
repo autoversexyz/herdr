@@ -130,7 +130,7 @@ impl AgentSoundOverrides {
             Some(Agent::Devin) => self.devin,
             Some(Agent::Antigravity) => self.agy,
             Some(Agent::Cline) => self.cline,
-            Some(Agent::Omp) => AgentSoundSetting::Default,
+            Some(Agent::Omp | Agent::Dsh) => AgentSoundSetting::Default,
             Some(Agent::Mastracode) => AgentSoundSetting::Default,
             Some(Agent::OpenCode) => self.open_code,
             Some(Agent::GithubCopilot) => self.github_copilot,

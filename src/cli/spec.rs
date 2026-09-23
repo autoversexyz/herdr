@@ -317,6 +317,17 @@ fn notification_command() -> Command {
 fn agent_command() -> Command {
     Command::new("agent")
         .about("Control and inspect agent panes")
+        .subcommand(
+            Command::new("dsh")
+                .about("Run an external DSH ACP worker in this terminal")
+                .arg(flag("describe"))
+                .arg(option("dsh-bin", "PATH"))
+                .arg(option("resume", "SESSION_ID"))
+                .arg(option("journal", "PATH"))
+                .arg(option("initial-prompt", "TEXT"))
+                .arg(option("model", "VALUE"))
+                .arg(option("effort", "VALUE")),
+        )
         .subcommand(Command::new("list").about("List agents"))
         .subcommand(id_command("get", "target", "Show an agent"))
         .subcommand(

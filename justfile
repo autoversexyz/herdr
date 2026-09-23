@@ -234,3 +234,10 @@ release $version $preview:
 # Print default config
 default-config:
     cargo run --release --locked -- --default-config
+
+# DSH native protocol and real terminal boundary, using an offline ACP peer.
+[unix]
+test-dsh:
+    just test-one dsh
+    cargo build --locked
+    HERDR_TEST_BIN=target/debug/herdr {{python}} -m unittest scripts.test_dsh_driver

@@ -402,3 +402,32 @@ herdr pane read w1:p1 --source recent --lines 50
 ```
 
 如果集成状态看起来不对,先确认智能体运行在 Herdr 内部,并且相关的钩子或插件是为同一个用户账号安装的。
+
+
+## DSH
+
+Herdr 提供终端客户端来控制单独安装的 DeepSeek Harness ACP 运行时，不打包 DSH 或凭据。
+先配置主机上的 DSH，然后检查接口并在空闲 shell 窗格中启动：
+
+```bash
+herdr agent dsh --describe
+dsh --profile acp --help
+herdr agent start researcher --kind dsh --pane <available-pane-id>
+```
+
+驱动程序管理一个持久 DSH 会话，通过现有 agent API 报告原生身份和生命周期。
+`agent prompt` 支持多行文本。权限请求会显示为 blocked，必须明确选择单次允许或拒绝，
+Herdr 不会自动回答。Ctrl-C 取消当前任务；`/exit` 关闭会话但保留历史。
+恢复会话时不会重新发送初始化提示。关闭 Herdr 客户端不会停止服务器拥有的工作窗格。
+
+`herdr agent dsh` 支持 `--model`、`--effort`、`--dsh-bin`、`--resume`、`--journal`
+和 `--initial-prompt`。模型和推理强度必须匹配 ACP 运行时公开的选项。
+日志记录原生提示的完成证据；终端回显或成功写入提示本身不能证明执行。
+恢复会话和初始化提示不能同时使用。此集成不接管已运行的 DSH web 会话，
+也不执行上下文压缩或 DSH 自动更新。
+
+`herdr agent dsh --catalog` 以 JSON 输出原生 ACP 配置选项，无需终端，也不会发送生成提示。
+使用 `--model` 查看指定模型的推理强度选项，使用 `--effort` 验证所选值。
+检查会创建并关闭一个空的原生会话（DSH 可能保留该记录），但不会创建 Herdr 窗格、启动记录或工作日志。
+该模式不能与 `--resume`、`--journal` 或 `--initial-prompt` 同用。
+目录中的模型不代表账户一定有配额或能够成功生成。工作日志同时记录配置的模型、推理强度及其时间戳。
