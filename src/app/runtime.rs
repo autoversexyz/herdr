@@ -56,6 +56,7 @@ impl App {
     }
 
     pub(crate) fn expire_metadata_at(&mut self, deadline: Instant, now: Instant) {
+        self.state.activity.expire(now);
         let previous_toast = self.state.toast.clone();
         for update in self.state.expire_agent_metadata_at(deadline, now) {
             self.refresh_new_herdr_toast_context_for_update(&update, &previous_toast);

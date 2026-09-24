@@ -587,4 +587,29 @@ async fn render_scale_profile() {
     print_token_rule_profiles();
     print_surface_reuse_profiles();
     print_surface_damage_profiles();
+    for (label, build) in [
+        ("background", workspaces as fn(usize) -> Vec<Workspace>),
+        ("active", active_panes),
+    ] {
+        let rows = CARDINALITIES.map(|count| {
+            let mut pipeline = RenderPipeline::new(build(count));
+            let mut report = crate::app::activity::tests::report();
+            let task = report.tasks[0].clone();
+            report.tasks = (0..100)
+                .map(|i| crate::api::schema::ActivityTask {
+                    id: format!("task-{i}"),
+                    ..task.clone()
+                })
+                .collect();
+            pipeline
+                .app
+                .state
+                .activity
+                .report(report, Instant::now())
+                .unwrap();
+            (count, profile_pipeline(pipeline))
+        });
+        println!("{label} panes with 100 reported headless tasks");
+        print_stage("combined pipeline", &rows, |stats| stats.total);
+    }
 }

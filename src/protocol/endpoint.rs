@@ -106,8 +106,56 @@ pub struct EndpointServerWelcome {
 pub fn snapshot_message(snapshot: &ClientShellSnapshot) -> serde_json::Result<ServerMessage> {
     Ok(ServerMessage::EndpointControl {
         kind: ENDPOINT_SNAPSHOT_KIND.into(),
-        data: serde_json::to_string(snapshot)?,
+        data: {
+            #[derive(Serialize)]
+            struct ExtendedSnapshot<'a> {
+                #[serde(flatten)]
+                snapshot: &'a ClientShellSnapshot,
+                #[serde(skip_serializing_if = "Vec::is_empty")]
+                activity: &'a Vec<crate::api::schema::ActivitySource>,
+            }
+            serde_json::to_string(&ExtendedSnapshot {
+                snapshot,
+                activity: &snapshot.activity,
+            })?
+        },
     })
+}
+
+pub fn decode_snapshot(data: &str) -> serde_json::Result<ClientShellSnapshot> {
+    #[derive(Deserialize)]
+    struct ExtendedSnapshot {
+        #[serde(flatten)]
+        snapshot: ClientShellSnapshot,
+        #[serde(default)]
+        activity: serde_json::Value,
+    }
+    let mut decoded: ExtendedSnapshot = serde_json::from_str(data)?;
+    // An unsupported optional projection must never break the core connection.
+    if let Ok(sources) =
+        serde_json::from_value::<Vec<crate::api::schema::ActivitySource>>(decoded.activity)
+    {
+        let mut validation = crate::app::activity::ActivityState::default();
+        if sources.len() <= 8
+            && sources.iter().all(|source| {
+                validation
+                    .report(
+                        crate::api::schema::ActivityReportParams {
+                            source: source.source.clone(),
+                            seq: 1,
+                            ttl_ms: 1,
+                            tasks: source.tasks.clone(),
+                            omitted: source.omitted,
+                        },
+                        std::time::Instant::now(),
+                    )
+                    .is_ok()
+            })
+        {
+            decoded.snapshot.activity = sources;
+        }
+    }
+    Ok(decoded.snapshot)
 }
 
 pub fn agent_completions_message(
@@ -219,6 +267,7 @@ mod tests {
 
     fn snapshot() -> ClientShellSnapshot {
         ClientShellSnapshot {
+            activity: Vec::new(),
             boot_id: "boot".into(),
             revision: 1,
             config_diagnostic: None,
@@ -408,5 +457,32 @@ mod tests {
         value["future_service"] = serde_json::json!("v2");
         let decoded: EndpointServerWelcome = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, welcome);
+    }
+    #[test]
+    fn optional_activity_round_trips_and_bad_extension_leaves_core_available() {
+        let mut snapshot = snapshot();
+        let report = crate::app::activity::tests::report();
+        snapshot.activity.push(crate::api::schema::ActivitySource {
+            source: report.source,
+            tasks: report.tasks,
+            omitted: 0,
+        });
+        let ServerMessage::EndpointControl { data, .. } = snapshot_message(&snapshot).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(decode_snapshot(&data).unwrap(), snapshot);
+        let mut value: serde_json::Value = serde_json::from_str(&data).unwrap();
+        value["activity"] = serde_json::json!({"future_schema":true});
+        let decoded = decode_snapshot(&value.to_string()).unwrap();
+        assert!(decoded.activity.is_empty());
+        assert_eq!(decoded.panes, snapshot.panes);
+        // Legacy binary serialization excludes this extension entirely.
+        let with = bincode::serde::encode_to_vec(&snapshot, bincode::config::standard()).unwrap();
+        snapshot.activity.clear();
+        assert_eq!(
+            with,
+            bincode::serde::encode_to_vec(&snapshot, bincode::config::standard()).unwrap()
+        );
     }
 }

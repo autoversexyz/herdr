@@ -1228,6 +1228,96 @@
     },
     "request": {
       "$defs": {
+        "ActivityReportParams": {
+          "properties": {
+            "omitted": {
+              "default": 0,
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seq": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tasks": {
+              "items": {
+                "$ref": "#/schemas/request/$defs/ActivityTask"
+              },
+              "type": "array"
+            },
+            "ttl_ms": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "source",
+            "seq",
+            "ttl_ms",
+            "tasks"
+          ],
+          "type": "object"
+        },
+        "ActivityTask": {
+          "properties": {
+            "effort": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "elapsed_seconds": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "harness": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "model": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "progress": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "request_id",
+            "harness",
+            "workspace",
+            "status",
+            "progress"
+          ],
+          "type": "object"
+        },
         "AgentPromptParams": {
           "properties": {
             "target": {
@@ -5008,6 +5098,22 @@
         {
           "properties": {
             "method": {
+              "const": "activity.report",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/ActivityReportParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
               "const": "workspace.create",
               "type": "string"
             },
@@ -6672,6 +6778,84 @@
     },
     "success_response": {
       "$defs": {
+        "ActivitySource": {
+          "properties": {
+            "omitted": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source": {
+              "type": "string"
+            },
+            "tasks": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ActivityTask"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "source",
+            "tasks",
+            "omitted"
+          ],
+          "type": "object"
+        },
+        "ActivityTask": {
+          "properties": {
+            "effort": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "elapsed_seconds": {
+              "default": null,
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "harness": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "model": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "progress": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "workspace": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "request_id",
+            "harness",
+            "workspace",
+            "status",
+            "progress"
+          ],
+          "type": "object"
+        },
         "AgentInfo": {
           "properties": {
             "agent": {
@@ -9334,6 +9518,22 @@
             },
             {
               "properties": {
+                "changed": {
+                  "type": "boolean"
+                },
+                "type": {
+                  "const": "activity_reported",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "changed"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
                 "snapshot": {
                   "$ref": "#/schemas/success_response/$defs/SessionSnapshot"
                 },
@@ -10693,6 +10893,12 @@
         },
         "SessionSnapshot": {
           "properties": {
+            "activity": {
+              "items": {
+                "$ref": "#/schemas/success_response/$defs/ActivitySource"
+              },
+              "type": "array"
+            },
             "agents": {
               "items": {
                 "$ref": "#/schemas/success_response/$defs/AgentInfo"

@@ -182,6 +182,11 @@ fn api_command() -> Command {
         .about("Inspect socket API metadata and live runtime state")
         .subcommand(Command::new("snapshot").about("Print the live session snapshot"))
         .subcommand(
+            Command::new("report-activity")
+                .about("Replace bounded headless activity from JSON")
+                .arg(Arg::new("json").required(true)),
+        )
+        .subcommand(
             Command::new("schema")
                 .about("Print or write the bundled API schema")
                 .arg(json_flag())

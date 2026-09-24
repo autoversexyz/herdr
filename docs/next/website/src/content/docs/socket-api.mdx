@@ -987,3 +987,21 @@ The numbered binary protocol remains for same-install and internal operations,
 including direct terminal attach and live handoff. Check `ping` or `herdr status`
 before using those operations across different builds. JSON API clients should
 ignore unknown fields and handle unsupported methods as normal errors.
+
+## Headless activity reports
+
+`herdr api report-activity JSON` replaces one source's display-only headless tasks
+through `activity.report`. Parameters are `source`, monotonically increasing
+`seq`, `ttl_ms` (1–120000), `tasks` (at most 100), and `omitted`. Each task has
+`id`, `request_id`, `harness`, `workspace`, `status`, `progress`, and optional
+`model`, `effort`, `elapsed_seconds`. There are at most eight sources. Task text
+is limited to 256 UTF-8 bytes without control characters; source names to 64.
+Empty replacements clear visible rows; expiry clears a disconnected publisher.
+
+The optional `activity` field in `session.snapshot` and the stable JSON shell
+snapshot exposes these facts. Old clients ignore it; invalid or unsupported
+optional activity does not break the core connection. Frozen binary codecs are
+unchanged. The expanded agent panel reserves a read-only headless strip and
+reports omitted rows. Disconnected endpoints show stale observations. Native
+rows carrying the `hygiene_kind=durable` metadata token are marked durable.
+Reports never create panes, agents, input targets or result acknowledgements.

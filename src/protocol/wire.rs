@@ -920,6 +920,10 @@ where
 /// Initial resource projection used by the stable client-owned shell.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientShellSnapshot {
+    // Optional JSON extension; deliberately excluded from frozen binary codecs.
+    // endpoint::snapshot_message/decode_snapshot own its JSON envelope.
+    #[serde(skip)]
+    pub activity: Vec<crate::api::schema::ActivitySource>,
     /// Changes whenever the endpoint process restarts.
     pub boot_id: String,
     /// Monotonic replacement revision within one endpoint boot.
@@ -2674,6 +2678,7 @@ mod tests {
     #[test]
     fn client_shell_snapshot_roundtrip() {
         let msg = ServerMessage::ClientShellSnapshot(Box::new(ClientShellSnapshot {
+            activity: Vec::new(),
             boot_id: "boot-1".into(),
             revision: 1,
             config_diagnostic: Some("endpoint config warning".into()),

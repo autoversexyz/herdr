@@ -22,7 +22,8 @@ pub const SOCKET_PATH_ENV_VAR: &str = "HERDR_SOCKET_PATH";
 pub(crate) fn request_changes_ui(request: &Request) -> bool {
     matches!(
         &request.method,
-        Method::ServerReloadConfig(_)
+        Method::ActivityReport(_)
+            | Method::ServerReloadConfig(_)
             | Method::ServerReloadAgentManifests(_)
             | Method::NotificationShow(_)
             | Method::ProductAnnouncementDismiss(_)

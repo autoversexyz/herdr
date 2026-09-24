@@ -1024,6 +1024,9 @@ impl App {
                     },
                 );
             }
+            Method::ActivityReport(params) => {
+                return self.handle_activity_report(request.id, params)
+            }
             Method::SessionSnapshot(_) => return self.handle_session_snapshot(request.id),
             Method::WorkspaceList(_) => return self.handle_workspace_list(request.id),
             Method::WorkspaceGet(target) => return self.handle_workspace_get(request.id, target),

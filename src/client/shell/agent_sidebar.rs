@@ -57,6 +57,12 @@ pub(super) fn render_agent_panel(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
+    let area = super::activity::render_strip(
+        buffer,
+        area,
+        std::iter::once(("", snapshot.activity.as_slice(), false)),
+        config,
+    );
     if !render_agent_panel_header(
         buffer,
         area,
@@ -292,7 +298,7 @@ pub(super) fn agent_row(
         .agent
         .as_deref()
         .and_then(crate::detect::parse_agent_label);
-    let rows = crate::ui::sidebar_agent_rows(
+    let mut rows = crate::ui::sidebar_agent_rows(
         &config.agents,
         crate::ui::AgentTokenContext {
             machine,
@@ -310,6 +316,20 @@ pub(super) fn agent_row(
         },
         state_text,
     );
+    if tokens
+        .get("hygiene_kind")
+        .is_some_and(|kind| kind == "durable")
+    {
+        if let Some(row) = rows.first_mut() {
+            row.insert(
+                0,
+                crate::ui::ResolvedToken {
+                    kind: crate::ui::ResolvedTokenKind::Custom("durable".into()),
+                    style: Default::default(),
+                },
+            );
+        }
+    }
     Some(AgentRow {
         pane_id: agent.pane_id.clone(),
         status: agent.agent_status,

@@ -754,3 +754,9 @@ herdr agent wait w1:p1 --until blocked
 由客户端渲染的 Herdr UI 对本地和 SSH 服务器使用稳定的端点代数。客户端和服务器构建不必一致。连接时，双方会协商核心快照、屏幕、输入和 blob 编解码器，服务器则公布支持的 API 方法和可选能力。已保存的 SSH 机器需要 `surface_interest` 来确保只有选中的机器传输窗格画面，并需要 `health_check` 来发现空闲连接的故障。缺少这些能力的服务器会显示 Attention，直到明确更新。详见[连接机器](/zh-cn/docs/connecting-machines/)。缺少方法时,只禁用该服务器上的对应操作并显示客户端本地通知;操作被拒绝或超时也不会断开连接。只有早于端点第 1 代的服务器需要最后更新一次。
 
 带编号的二进制协议仍用于同一安装内的内部操作,包括直接终端连接和实时交接。跨不同构建使用这些操作前,请检查 `ping` 或 `herdr status`。JSON API 客户端应忽略未知字段,并把不支持的方法当作普通错误处理。
+
+## 无头任务活动报告
+
+`herdr api report-activity JSON` 通过 `activity.report` 替换某个来源的只读任务数据。参数为 `source`、单调递增的 `seq`、`ttl_ms`（1–120000）、`tasks`（最多100项）及 `omitted`。每项包含 `id`、`request_id`、`harness`、`workspace`、`status`、`progress`，以及可选的 `model`、`effort`、`elapsed_seconds`。最多8个来源；来源名称最多64个UTF-8字节，任务文本最多256个字节且不含控制字符。空列表或TTL到期会清除显示。
+
+`session.snapshot` 和稳定JSON客户端快照通过可选的 `activity` 字段提供这些数据。旧客户端可忽略它；无效或不受支持的扩展不会中断核心连接。固定的二进制协议保持不变。展开的代理面板显示只读无头任务区及省略数量；断开的端点显示过期观测。带 `hygiene_kind=durable` 元数据的原生行标记为 durable。报告不会创建窗格、代理、输入目标或结果确认。

@@ -44,6 +44,7 @@ fn negotiation() -> super::super::EndpointNegotiation {
 
 fn test_snapshot(boot_id: &str, revision: u64) -> crate::protocol::ClientShellSnapshot {
     crate::protocol::ClientShellSnapshot {
+        activity: Vec::new(),
         boot_id: boot_id.into(),
         revision,
         config_diagnostic: None,
@@ -410,6 +411,7 @@ fn activation_requires_an_exact_snapshot_surface_revision_pair() {
     let mut activation = machine();
     let target = endpoint();
     let snapshot = crate::protocol::ClientShellSnapshot {
+        activity: Vec::new(),
         boot_id: "remote-boot".into(),
         revision: 2,
         config_diagnostic: None,

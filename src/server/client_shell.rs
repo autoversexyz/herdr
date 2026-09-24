@@ -240,6 +240,7 @@ pub(super) fn snapshot_with_completions(
             });
 
     let shell = protocol::ClientShellSnapshot {
+        activity: app.state.activity.snapshot(),
         boot_id: boot_id.to_owned(),
         revision,
         config_diagnostic: config_diagnostic.map(str::to_owned),

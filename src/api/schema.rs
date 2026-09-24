@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod activity;
+pub use activity::*;
 pub mod agents;
 pub mod commands;
 pub mod common;
@@ -75,6 +77,8 @@ pub enum Method {
     ClientShellSurfaceSet(ClientShellSurfaceSetParams),
     #[serde(rename = "session.snapshot")]
     SessionSnapshot(EmptyParams),
+    #[serde(rename = "activity.report")]
+    ActivityReport(ActivityReportParams),
     #[serde(rename = "workspace.create")]
     WorkspaceCreate(WorkspaceCreateParams),
     #[serde(rename = "workspace.list")]

@@ -263,6 +263,7 @@ impl AppState {
         self.terminals
             .values()
             .filter_map(|terminal| terminal.next_agent_metadata_expiry())
+            .chain(self.activity.next_expiry())
             .chain(
                 self.terminals
                     .values()

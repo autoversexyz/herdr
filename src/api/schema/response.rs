@@ -48,6 +48,9 @@ pub enum ResponseResult {
         #[serde(default)]
         capabilities: Option<ServerCapabilities>,
     },
+    ActivityReported {
+        changed: bool,
+    },
     SessionSnapshot {
         snapshot: Box<SessionSnapshot>,
     },
