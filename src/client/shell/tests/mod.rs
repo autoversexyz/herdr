@@ -9,6 +9,7 @@ mod text_editing;
 
 pub(super) fn snapshot() -> ClientShellSnapshot {
     ClientShellSnapshot {
+        activity: Vec::new(),
         boot_id: "boot-1".into(),
         revision: 1,
         config_diagnostic: None,

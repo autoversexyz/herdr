@@ -7,6 +7,8 @@ use super::workspaces::WorkspaceInfo;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SessionSnapshot {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub activity: Vec<super::ActivitySource>,
     pub version: String,
     pub protocol: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]

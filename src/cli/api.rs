@@ -11,6 +11,7 @@ pub(super) fn run_api_command(args: &[String]) -> std::io::Result<i32> {
     match subcommand {
         "schema" => api_schema(&args[1..]),
         "snapshot" => api_snapshot(&args[1..]),
+        "report-activity" => api_report_activity(&args[1..]),
         "help" | "--help" | "-h" => {
             print_api_help();
             Ok(0)
@@ -65,6 +66,22 @@ fn api_snapshot(args: &[String]) -> std::io::Result<i32> {
     })?)
 }
 
+fn api_report_activity(args: &[String]) -> std::io::Result<i32> {
+    let [json] = args else {
+        eprintln!("usage: herdr api report-activity JSON");
+        return Ok(2);
+    };
+    if json.len() > 256 * 1024 {
+        eprintln!("activity report exceeds 256KiB");
+        return Ok(2);
+    }
+    let params = serde_json::from_str(json)?;
+    super::print_response(&super::send_request(&Request {
+        id: "cli:activity:report".into(),
+        method: Method::ActivityReport(params),
+    })?)
+}
+
 fn write_schema_file(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::write(path, API_SCHEMA_JSON)
 }
@@ -99,6 +116,7 @@ fn schema_summary_text() -> std::io::Result<String> {
 fn print_api_help() {
     eprintln!("herdr api commands:");
     eprintln!("  herdr api snapshot");
+    eprintln!("  herdr api report-activity JSON");
     eprintln!("  herdr api schema [--json | --output PATH]");
 }
 

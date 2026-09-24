@@ -62,6 +62,7 @@ impl App {
         }
 
         SessionSnapshot {
+            activity: self.state.activity.snapshot(),
             version: crate::build_info::version(),
             protocol: crate::protocol::PROTOCOL_VERSION,
             focused_workspace_id,

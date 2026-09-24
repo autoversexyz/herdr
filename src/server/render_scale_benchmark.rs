@@ -613,6 +613,39 @@ async fn render_scale_profile() {
     print_token_rule_profiles();
     print_surface_reuse_profiles();
     print_surface_damage_profiles();
+    for (label, build) in [
+        ("background", workspaces as fn(usize) -> Vec<Workspace>),
+        ("active", active_panes),
+    ] {
+        let rows = CARDINALITIES.map(|count| {
+            let mut pipeline = RenderPipeline::new(build(count));
+            let mut report = crate::app::activity::tests::report();
+            let task = report.tasks[0].clone();
+            report.tasks = (0..100)
+                .map(|i| crate::api::schema::ActivityTask {
+                    id: format!("task-{i}"),
+                    ..task.clone()
+                })
+                .collect();
+            pipeline
+                .app
+                .state
+                .activity
+                .report(report, Instant::now())
+                .unwrap();
+            pipeline.client.set_snapshot(Box::new(super::client_shell::snapshot(
+                &pipeline.app,
+                "bench-boot",
+                1,
+                None,
+                None,
+            )));
+            (count, profile_pipeline(pipeline))
+        });
+        println!("{label} panes with 100 reported headless tasks");
+        print_stage("client shell composition", &rows, |stats| stats.client);
+        print_stage("combined pipeline", &rows, |stats| stats.total);
+    }
 }
 
 /// Dirty-row collection while output scrolls a large pane, the host's hot path

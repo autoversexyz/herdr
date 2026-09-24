@@ -240,6 +240,7 @@ pub(super) fn snapshot_with_completions(
             });
 
     let shell = protocol::ClientShellSnapshot {
+        activity: snapshot.activity,
         boot_id: boot_id.to_owned(),
         revision,
         config_diagnostic: config_diagnostic.map(str::to_owned),
@@ -667,7 +668,12 @@ mod tests {
             app.terminal_runtimes.insert(terminal.id.clone(), runtime);
         }
 
+        app.state
+            .activity
+            .report(crate::app::activity::tests::report(), std::time::Instant::now())
+            .unwrap();
         let metadata = app.session_metadata_snapshot();
+        assert_eq!(metadata.activity[0].tasks[0].request_id, "build-a");
         assert_eq!(metadata.panes.len(), 3);
         assert_eq!(metadata.agents.len(), 2);
         assert!(metadata.panes.iter().all(|pane| pane.scroll.is_none()));
@@ -693,6 +699,7 @@ mod tests {
             .all(|runtime| runtime.test_scroll_metrics_reads() == 1));
 
         let (shell, completions) = snapshot_with_completions(&app, "boot", 9, None, None);
+        assert_eq!(shell.activity, metadata.activity);
         assert_eq!(shell.panes.len(), 3);
         assert_eq!(shell.agents.len(), 2);
         assert_eq!(shell.focused_pane_id, metadata.focused_pane_id);

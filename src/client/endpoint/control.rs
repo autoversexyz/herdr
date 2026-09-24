@@ -54,7 +54,7 @@ pub(crate) fn decode_endpoint_control(
         ));
     }
     if kind == crate::protocol::endpoint::ENDPOINT_SNAPSHOT_KIND {
-        let snapshot = serde_json::from_str(data)
+        let snapshot = crate::protocol::endpoint::decode_snapshot(data)
             .map_err(|error| format!("invalid endpoint snapshot: {error}"))?;
         return Ok(EndpointControlMessage::Snapshot(Box::new(snapshot)));
     }

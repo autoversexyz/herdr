@@ -52,6 +52,20 @@ pub(super) fn render_expanded(
     agent_scroll: &mut usize,
     hits: &mut ShellHitMap,
 ) {
+    let area = super::activity::render_strip(
+        buffer,
+        area,
+        endpoints.iter().filter_map(|endpoint| {
+            endpoint.snapshot.as_deref().map(|snapshot| {
+                (
+                    endpoint.label.as_str(),
+                    snapshot.activity.as_slice(),
+                    endpoint.status != ClientEndpointStatus::Online,
+                )
+            })
+        }),
+        config,
+    );
     if !super::agent_sidebar::render_agent_panel_header(
         buffer,
         area,

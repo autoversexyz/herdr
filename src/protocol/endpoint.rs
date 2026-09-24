@@ -10,6 +10,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::api::schema::{
+    activity::{validate_activity_source, MAX_ACTIVITY_SOURCES},
+    ActivitySource,
+};
+
 use super::{ClientShellSnapshot, ClientSurfaceSize, ServerMessage};
 
 pub const ENDPOINT_PROTOCOL_GENERATION: u32 = 1;
@@ -109,8 +114,46 @@ pub struct EndpointServerWelcome {
 pub fn snapshot_message(snapshot: &ClientShellSnapshot) -> serde_json::Result<ServerMessage> {
     Ok(ServerMessage::EndpointControl {
         kind: ENDPOINT_SNAPSHOT_KIND.into(),
-        data: serde_json::to_string(snapshot)?,
+        data: {
+            #[derive(Serialize)]
+            struct ExtendedSnapshot<'a> {
+                #[serde(flatten)]
+                snapshot: &'a ClientShellSnapshot,
+                #[serde(skip_serializing_if = "Vec::is_empty")]
+                activity: &'a Vec<ActivitySource>,
+            }
+            serde_json::to_string(&ExtendedSnapshot {
+                snapshot,
+                activity: &snapshot.activity,
+            })?
+        },
     })
+}
+
+pub fn decode_snapshot(data: &str) -> serde_json::Result<ClientShellSnapshot> {
+    #[derive(Deserialize)]
+    struct ExtendedSnapshot {
+        #[serde(flatten)]
+        snapshot: ClientShellSnapshot,
+        #[serde(default)]
+        activity: Option<serde_json::Value>,
+    }
+    let mut decoded: ExtendedSnapshot = serde_json::from_str(data)?;
+    // An unsupported optional projection must never break the core connection.
+    let Some(activity) = decoded.activity else {
+        return Ok(decoded.snapshot);
+    };
+    let Ok(sources) = serde_json::from_value::<Vec<ActivitySource>>(activity) else {
+        return Ok(decoded.snapshot);
+    };
+    if sources.len() <= MAX_ACTIVITY_SOURCES
+        && sources
+            .iter()
+            .all(|source| validate_activity_source(&source.source, &source.tasks).is_ok())
+    {
+        decoded.snapshot.activity = sources;
+    }
+    Ok(decoded.snapshot)
 }
 
 pub fn agent_completions_message(
@@ -224,6 +267,7 @@ mod tests {
 
     fn snapshot() -> ClientShellSnapshot {
         ClientShellSnapshot {
+            activity: Vec::new(),
             boot_id: "boot".into(),
             revision: 1,
             config_diagnostic: None,
@@ -350,7 +394,7 @@ mod tests {
             "description": null
         }]);
 
-        let decoded: ClientShellSnapshot = serde_json::from_value(snapshot).unwrap();
+        let decoded = decode_snapshot(&snapshot.to_string()).unwrap();
         assert_eq!(
             decoded.commands[0].action,
             crate::protocol::ClientShellCommandAction::Unknown
@@ -416,5 +460,37 @@ mod tests {
         value["future_service"] = serde_json::json!("v2");
         let decoded: EndpointServerWelcome = serde_json::from_value(value).unwrap();
         assert_eq!(decoded, welcome);
+    }
+
+    #[test]
+    fn optional_activity_round_trips_and_bad_extension_leaves_core_available() {
+        let mut snapshot = snapshot();
+        let report = crate::app::activity::tests::report();
+        snapshot.activity.push(crate::api::schema::ActivitySource {
+            source: report.source,
+            tasks: report.tasks,
+            omitted: 0,
+        });
+        let message = snapshot_message(&snapshot).unwrap();
+        let ServerMessage::EndpointControl { data, .. } = message else {
+            panic!("expected a named endpoint snapshot");
+        };
+        assert_eq!(decode_snapshot(&data).unwrap(), snapshot);
+        let mut core = snapshot.clone();
+        core.activity.clear();
+        let core_json = serde_json::to_string(&core).unwrap();
+        assert_eq!(decode_snapshot(&core_json).unwrap(), core);
+        let mut value: serde_json::Value = serde_json::from_str(&data).unwrap();
+        value["activity"][0]["tasks"][0]["progress"] = serde_json::json!("bad\u{1b}");
+        assert_eq!(decode_snapshot(&value.to_string()).unwrap(), core);
+        value["activity"] = serde_json::json!({"future_schema": true});
+        let decoded = decode_snapshot(&value.to_string()).unwrap();
+        assert_eq!(decoded, core);
+        // Legacy binary serialization excludes this extension entirely.
+        let with = bincode::serde::encode_to_vec(&snapshot, bincode::config::standard()).unwrap();
+        assert_eq!(
+            with,
+            bincode::serde::encode_to_vec(&core, bincode::config::standard()).unwrap()
+        );
     }
 }

@@ -205,6 +205,7 @@ mod tests {
             "plugin.pane.open",
             "plugin.pane.focus",
             "plugin.pane.close",
+            "activity.report",
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();

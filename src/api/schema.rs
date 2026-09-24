@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+pub mod activity;
 pub mod agents;
 pub mod commands;
 pub mod common;
@@ -15,6 +16,7 @@ pub mod tabs;
 pub mod workspaces;
 pub mod worktrees;
 
+pub use activity::*;
 pub use agents::*;
 pub use commands::*;
 pub use common::*;
@@ -145,6 +147,7 @@ operations::define_operations! {
     PluginPaneOpen(PluginPaneOpenParams) => "plugin.pane.open", true, false;
     PluginPaneFocus(PluginPaneFocusParams) => "plugin.pane.focus", true, false;
     PluginPaneClose(PluginPaneCloseParams) => "plugin.pane.close", true, false;
+    ActivityReport(ActivityReportParams) => "activity.report", true, false;
 }
 
 #[cfg(test)]
