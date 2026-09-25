@@ -10,10 +10,13 @@ herdr agent prompt-answer '{"target":"w1:p1"}'
 herdr agent prompt-answer '{"target":"w1:p1","expected_prompt":"TOKEN_FROM_PREVIEW","option":"2"}'
 ```
 
-The `native_prompt` response contains the original screen, literal options,
+The `native_prompt` response contains the original dialog text, literal options,
 native binding and fingerprint. Menus require at least two explicit single-digit
 numbered options, no duplicate keys, and a complete detection region within
-32 lines / 4096 bytes. Other prompts remain manual. No detector rule, default
+32 lines / 4096 bytes. The existing `after_last_horizontal_rule` structural helper
+separates the dialog from transcript history; when no separator exists it retains
+the whole region. The fingerprint still covers the full detection screen.
+Other prompts remain manual. No detector rule, default
 answer or permission decision is introduced.
 
 Both reads and writes require a blocked identified native conversation and its
