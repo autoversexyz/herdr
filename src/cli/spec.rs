@@ -335,6 +335,9 @@ fn agent_command() -> Command {
         )
         .subcommand(Command::new("list").about("List agents"))
         .subcommand(id_command("get", "target", "Show an agent"))
+        .subcommand(Command::new("prompt-answer")
+            .about("Inspect or answer an unchanged native numbered prompt")
+            .arg(required("json", "JSON")))
         .subcommand(
             Command::new("read")
                 .about("Read agent terminal output")

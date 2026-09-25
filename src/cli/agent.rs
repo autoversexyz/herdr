@@ -21,6 +21,7 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         "get" => agent_get(&args[1..]),
         "read" => agent_read(&args[1..]),
         "send-keys" => agent_send_keys(&args[1..]),
+        "prompt-answer" => agent_prompt_answer(&args[1..]),
         "prompt" => agent_prompt(&args[1..]),
         "rename" => agent_rename(&args[1..]),
         "focus" => agent_focus(&args[1..]),
@@ -168,6 +169,22 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
         print_agent_explain_text(&explain, verbose);
     }
     Ok(0)
+}
+
+fn agent_prompt_answer(args: &[String]) -> std::io::Result<i32> {
+    let [json] = args else {
+        eprintln!("usage: herdr agent prompt-answer JSON");
+        return Ok(2);
+    };
+    if json.len() > 8192 {
+        eprintln!("prompt answer request exceeds 8KiB");
+        return Ok(2);
+    }
+    let params = serde_json::from_str(json)?;
+    super::print_response(&super::send_request(&Request {
+        id: "cli:agent:prompt-answer".into(),
+        method: Method::AgentPromptAnswer(params),
+    })?)
 }
 
 fn print_agent_explain_text(explain: &serde_json::Value, verbose: bool) {

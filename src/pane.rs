@@ -3405,6 +3405,23 @@ impl PaneRuntime {
         self.io.try_send_bytes(bytes)
     }
 
+    /// Serialize the final content check and enqueue with PTY/resize writers.
+    /// A queued write is transport evidence, not proof the application accepted it.
+    pub(crate) fn send_if_content_unchanged(&self, seq: u64, bytes: Bytes) -> std::io::Result<()> {
+        let _guard = self
+            .content_write_lock
+            .lock()
+            .map_err(|_| std::io::Error::other("terminal content lock unavailable"))?;
+        if !seq.is_multiple_of(2) || self.content_seq() != seq {
+            return Err(std::io::Error::other(
+                "terminal content changed before input",
+            ));
+        }
+        self.io
+            .try_send_bytes(bytes)
+            .map_err(|err| std::io::Error::other(err.to_string()))
+    }
+
     pub fn queue_user_input_submission(
         &self,
         text: Bytes,

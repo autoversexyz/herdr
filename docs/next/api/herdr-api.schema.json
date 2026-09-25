@@ -1318,6 +1318,31 @@
           ],
           "type": "object"
         },
+        "AgentPromptAnswerParams": {
+          "additionalProperties": false,
+          "description": "Read a blocked native menu, or answer the exact menu previously inspected.",
+          "properties": {
+            "expected_prompt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "option": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "type": "object"
+        },
         "AgentPromptParams": {
           "properties": {
             "target": {
@@ -5503,6 +5528,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/AgentSendKeysParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "agent.prompt_answer",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/AgentPromptAnswerParams"
             }
           },
           "required": [
@@ -10340,6 +10381,20 @@
               "required": [
                 "type",
                 "explain"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "prompt": true,
+                "type": {
+                  "const": "native_prompt",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "prompt"
               ],
               "type": "object"
             },

@@ -470,6 +470,10 @@ impl TerminalRuntime {
         self.0.try_send_bytes(bytes)
     }
 
+    pub(crate) fn send_if_content_unchanged(&self, seq: u64, bytes: Bytes) -> std::io::Result<()> {
+        self.0.send_if_content_unchanged(seq, bytes)
+    }
+
     pub fn queue_user_input_submission(
         &self,
         text: Bytes,
