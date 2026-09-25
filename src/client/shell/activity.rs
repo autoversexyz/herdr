@@ -56,7 +56,7 @@ pub(super) fn render_strip<'a>(
                     task.model.as_deref().unwrap_or("default?"),
                     task.effort.as_deref().unwrap_or("default?")
                 ),
-                format!(" {} · {elapsed}", task.workspace),
+                format!(" {elapsed} · {}", task.workspace),
                 if stale {
                     " STALE · last observation".into()
                 } else {
@@ -147,7 +147,7 @@ mod tests {
         assert!(text.contains("headless · ephemeral (4)"));
         assert!(text.contains("build-a"));
         assert!(text.contains("sol/high"));
-        assert!(text.contains("canvas · 42s"));
+        assert!(text.contains("42s · canvas"));
         assert!(text.contains("running · monitoring"));
         assert!(text.contains("+3 more"));
         assert!(text.contains("durable"));
@@ -184,5 +184,34 @@ mod tests {
         assert!(text.contains("remote/build-a"));
         assert!(text.contains("STALE"));
         assert!(!text.contains("running · monitoring"));
+    }
+
+    #[test]
+    fn elapsed_time_survives_long_workspace_in_narrow_panel() {
+        let config = ClientShellConfig::from_config(&crate::config::Config::default());
+        let mut report = crate::app::activity::tests::report();
+        report.tasks[0].workspace = "canvas-astra-removeverify".into();
+        report.tasks[0].elapsed_seconds = Some(86406);
+        let sources = [ActivitySource {
+            source: report.source,
+            tasks: report.tasks,
+            omitted: 0,
+        }];
+        let area = Rect::new(0, 0, 25, 24);
+        let mut buffer = Buffer::empty(area);
+        render_strip(
+            &mut buffer,
+            area,
+            std::iter::once(("", sources.as_slice(), false)),
+            &config,
+        );
+        let text = buffer
+            .content
+            .chunks(25)
+            .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("86406s · canvas-astra"));
+        assert!(text.contains("running · monitoring"));
     }
 }
