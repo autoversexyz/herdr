@@ -19,6 +19,7 @@ fn params(args: &[&str]) -> serde_json::Value {
         Operation::Rename(params) => Method::AgentRename(params),
         Operation::Wait(params) => Method::AgentWait(params),
         Operation::Prompt(params) => Method::AgentPrompt(params),
+        Operation::PromptAnswer(params) => Method::AgentPromptAnswer(params),
         Operation::Start(params) => Method::AgentStart(params),
         _ => panic!("expected API params"),
     };
@@ -182,6 +183,22 @@ fn agent_projection_rename_and_local_adapters() {
     assert_eq!(params.agent.as_deref(), Some("codex"));
     assert!(!params.json);
     assert!(params.verbose);
+}
+
+#[test]
+fn agent_prompt_answer_projection_decodes_bounded_json() {
+    let preview = r#"{"target":"w1:p1"}"#;
+    let answer = r#"{"target":"w1:p1","expected_prompt":"fingerprint","option":"2"}"#;
+    for json in [preview, answer] {
+        assert_eq!(
+            params(&["prompt-answer", json]),
+            serde_json::from_str::<serde_json::Value>(json).unwrap()
+        );
+    }
+    let oversized = "x".repeat(8193);
+    assert!(
+        matches!(parse(&["prompt-answer", &oversized]), Err(ParseError::Usage(message)) if message == "prompt answer request exceeds 8KiB")
+    );
 }
 
 #[test]

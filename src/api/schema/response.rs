@@ -187,6 +187,9 @@ pub enum ResponseResult {
     AgentExplain {
         explain: serde_json::Value,
     },
+    NativePrompt {
+        prompt: serde_json::Value,
+    },
     SubscriptionStarted {},
     WaitMatched {
         event: EventEnvelope,

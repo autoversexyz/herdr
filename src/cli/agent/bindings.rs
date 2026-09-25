@@ -7,8 +7,9 @@ use crate::api::schema::agents::{
     AgentSendKeysProjection, AgentStartProjection, AgentWaitProjection,
 };
 use crate::api::schema::{
-    AgentPromptParams, AgentReadParams, AgentRenameParams, AgentSendKeysParams, AgentStartParams,
-    AgentStatus, AgentTarget, AgentWaitParams, ReadFormat, ReadSource, READ_FORMATS, READ_SOURCES,
+    AgentPromptAnswerParams, AgentPromptParams, AgentReadParams, AgentRenameParams,
+    AgentSendKeysParams, AgentStartParams, AgentStatus, AgentTarget, AgentWaitParams, ReadFormat,
+    ReadSource, READ_FORMATS, READ_SOURCES,
 };
 use crate::cli::dsh::{self, Invocation, Options};
 pub(crate) use crate::cli::projection::optional_text;
@@ -267,6 +268,7 @@ pub(crate) enum Operation {
     Rename(AgentRenameParams),
     Wait(AgentWaitParams),
     Prompt(AgentPromptParams),
+    PromptAnswer(AgentPromptAnswerParams),
     Start(AgentStartParams),
     Attach(Attach),
     Explain(Explain),
@@ -298,6 +300,11 @@ pub(crate) fn command() -> Command {
             .args(AgentPromptWaitProjection::arguments().into_iter().map(|arg| arg.requires("wait")))
             .override_usage("herdr agent prompt <TARGET> <TEXT> [OPTIONS]")
             .after_help("If the agent is already blocked, submission is rejected with agent_blocked before any input is sent. When an accepted submission starts from another non-working state, --wait requires an observed working or blocked state within 5000ms; otherwise it returns agent_prompt_stalled. A caller timeout that expires first returns timeout. It then matches idle, done, or blocked by default, or any exact --until state. It does not track turns: if the agent is already working, that active turn's completion may match."))
+        .subcommand(
+            Command::new("prompt-answer")
+                .about("Inspect or answer an unchanged native numbered prompt")
+                .arg(Arg::new("json").value_name("JSON").required(true)),
+        )
         .subcommand(leaf("start", AgentStartProjection::arguments(), "Start a supported interactive agent in an existing pane")
             .override_usage("herdr agent start <NAME> --kind <KIND> --pane <ID> [OPTIONS] [-- [AGENT_ARG]...]")
             .after_help("The pane must be at its interactive shell prompt. Success means the expected agent was detected in the same terminal and is ready for input.\n\nnext: herdr agent prompt <TARGET> <TEXT> --wait"))
@@ -333,6 +340,16 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError
                 params.wait = Some(AgentPromptWaitProjection::from_matches(matches)?);
             }
             Operation::Prompt(params)
+        }
+        "prompt-answer" => {
+            let Some(json) = matches.get_one::<String>("json") else {
+                return Err(ParseError::Usage("missing prompt answer JSON".into()));
+            };
+            if json.len() > 8192 {
+                return Err(ParseError::Usage("prompt answer request exceeds 8KiB".into()));
+            }
+            let params = serde_json::from_str(json).map_err(std::io::Error::from)?;
+            Operation::PromptAnswer(params)
         }
         "start" => Operation::Start(AgentStartProjection::from_matches(matches)?),
         "attach" => Operation::Attach(AttachProjection::from_matches(matches)?),

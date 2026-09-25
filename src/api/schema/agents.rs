@@ -29,6 +29,17 @@ cli_params! {
     }
 }
 
+/// Read a blocked native menu, or answer the exact menu previously inspected.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AgentPromptAnswerParams {
+    pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<String>,
+}
+
 cli_params! {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
     pub struct AgentWaitParams => AgentWaitProjection {

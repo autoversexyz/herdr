@@ -5,6 +5,7 @@ mod agents;
 mod env;
 mod integrations;
 mod layouts;
+mod native_prompt;
 mod panes;
 pub(crate) mod plugins;
 pub(super) mod responses;
@@ -1145,6 +1146,9 @@ impl App {
             Method::AgentExplain(target) => return self.handle_agent_explain(request.id, target),
             Method::AgentSendKeys(params) => {
                 return self.handle_agent_send_keys(request.id, params);
+            }
+            Method::AgentPromptAnswer(params) => {
+                return self.handle_agent_prompt_answer(request.id, params);
             }
             Method::PaneSplit(params) => return self.handle_pane_split(request.id, params),
             Method::PaneSwap(params) => return self.handle_pane_swap(request.id, params),

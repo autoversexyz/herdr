@@ -206,6 +206,7 @@ mod tests {
             "plugin.pane.focus",
             "plugin.pane.close",
             "activity.report",
+            "agent.prompt_answer",
         ]
         .into_iter()
         .collect::<BTreeSet<_>>();

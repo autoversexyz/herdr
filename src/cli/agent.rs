@@ -58,6 +58,13 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         Operation::Rename(params) => agent_rename(params),
         Operation::Wait(params) => agent_wait(params),
         Operation::Prompt(params) => agent_prompt(params),
+        Operation::PromptAnswer(params) => {
+            let response = super::send_request(&Request {
+                id: "cli:agent:prompt-answer".into(),
+                method: Method::AgentPromptAnswer(params),
+            })?;
+            super::print_response(&response)
+        }
         Operation::Start(params) => agent_start(params),
         Operation::Attach(params) => agent_attach(params),
         Operation::Explain(params) => agent_explain(params),
