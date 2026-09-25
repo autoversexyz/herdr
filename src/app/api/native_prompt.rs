@@ -93,7 +93,7 @@ impl App {
             return encode_error(id, "native_prompt_unavailable", "foreground agent changed");
         }
         let seq = runtime.content_seq();
-        let screen = runtime.detection_text();
+        let full_screen = runtime.detection_text();
         if !seq.is_multiple_of(2) || runtime.content_seq() != seq {
             return encode_error(
                 id,
@@ -101,7 +101,11 @@ impl App {
                 "terminal changed during capture",
             );
         }
-        let Some(choices) = options(&screen) else {
+        // Reuse Herdr's existing structural region helper. A long transcript
+        // above the modal is not part of the displayed decision, but remains
+        // covered by the full-screen fingerprint and final content guard.
+        let screen = crate::detect::manifest::after_last_horizontal_rule(&full_screen);
+        let Some(choices) = options(screen) else {
             return encode_error(
                 id,
                 "native_prompt_unsupported",
@@ -112,7 +116,11 @@ impl App {
             "agent": agent.agent, "native_session": agent.agent_session, "state_change_seq": agent.state_change_seq});
         let fingerprint = format!(
             "{:x}",
-            Sha256::digest(serde_json::json!([binding, screen]).to_string().as_bytes())
+            Sha256::digest(
+                serde_json::json!([binding, full_screen])
+                    .to_string()
+                    .as_bytes()
+            )
         );
         let mut input_queued = false;
         if let Some(option) = &params.option {
@@ -151,9 +159,10 @@ impl App {
             id,
             ResponseResult::NativePrompt {
                 prompt: serde_json::json!({
-                    "binding": binding, "screen": screen, "options": choices, "fingerprint": fingerprint,
-                    "input_queued": input_queued, "acceptance": "unverified"
-                }),
+                "binding": binding, "screen": screen, "screen_region": "after_last_horizontal_rule",
+                "options": choices, "fingerprint": fingerprint,
+                        "input_queued": input_queued, "acceptance": "unverified"
+                    }),
             },
         )
     }
@@ -276,5 +285,12 @@ mod tests {
         assert!(options("1. First\n1. Repeated\n2. Second").is_none());
         assert!(options(&format!("{}\n1. A\n2. B", "x".repeat(4096))).is_none());
         assert!(options(&format!("{}1. A\n2. B", "x\n".repeat(32))).is_none());
+        let transcript_and_dialog = format!(
+            "{}\n────────────────────────\nChoose?\n1. A\n2. B",
+            "history\n".repeat(50)
+        );
+        let region = crate::detect::manifest::after_last_horizontal_rule(&transcript_and_dialog);
+        assert_eq!(region, "Choose?\n1. A\n2. B");
+        assert!(options(region).is_some());
     }
 }

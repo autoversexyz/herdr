@@ -1481,7 +1481,7 @@ fn above_prompt_box(content: &str) -> &str {
     &content[..end.min(content.len())]
 }
 
-fn after_last_horizontal_rule(content: &str) -> &str {
+pub(crate) fn after_last_horizontal_rule(content: &str) -> &str {
     let mut last_rule_end = 0usize;
     let mut offset = 0usize;
     for line in content.lines() {
