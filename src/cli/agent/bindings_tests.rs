@@ -20,6 +20,7 @@ fn params(args: &[&str]) -> serde_json::Value {
         Operation::Wait(params) => Method::AgentWait(params),
         Operation::Prompt(params) => Method::AgentPrompt(params),
         Operation::PromptAnswer(params) => Method::AgentPromptAnswer(params),
+        Operation::QueuePrompt(params) => Method::AgentQueuePrompt(params),
         Operation::Start(params) => Method::AgentStart(params),
         _ => panic!("expected API params"),
     };
@@ -202,6 +203,25 @@ fn agent_prompt_answer_projection_decodes_bounded_json() {
 }
 
 #[test]
+fn agent_queue_prompt_projection_decodes_bounded_json() {
+    let request = serde_json::json!({
+        "target": "w1:p1",
+        "text": "Read the inbox",
+        "terminal_id": "term_1",
+        "native_id": "native-one",
+        "state_change_seq": 7,
+    });
+    let json = request.to_string();
+    assert_eq!(params(&["queue-prompt", &json]), request);
+
+    let oversized = "x".repeat(65537);
+    let Err(ParseError::Usage(message)) = parse(&["queue-prompt", &oversized]) else {
+        panic!("expected size validation before JSON decoding");
+    };
+    assert_eq!(message, "queue prompt request exceeds 64KiB");
+}
+
+#[test]
 fn agent_projection_clap_relations_and_help_before_transport() {
     super::command().debug_assert();
     for args in [
@@ -210,6 +230,7 @@ fn agent_projection_clap_relations_and_help_before_transport() {
         vec!["rename", "opaque", "name", "--clear"],
         vec!["prompt", "opaque", "text", "--until=idle"],
         vec!["prompt", "opaque", "text", "--timeout=0"],
+        vec!["queue-prompt"],
         vec!["wait", "opaque", "--timeout=bad"],
         vec!["wait", "opaque", "--until=invalid"],
         vec!["start", "name", "--kind=codex"],

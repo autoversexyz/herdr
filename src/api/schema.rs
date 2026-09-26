@@ -149,6 +149,7 @@ operations::define_operations! {
     PluginPaneClose(PluginPaneCloseParams) => "plugin.pane.close", true, false;
     ActivityReport(ActivityReportParams) => "activity.report", true, false;
     AgentPromptAnswer(AgentPromptAnswerParams) => "agent.prompt_answer", true, false;
+    AgentQueuePrompt(AgentQueuePromptParams) => "agent.queue_prompt", false, false;
 }
 
 #[cfg(test)]

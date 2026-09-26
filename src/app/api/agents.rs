@@ -3,8 +3,8 @@ use std::time::Duration;
 use bytes::Bytes;
 
 use crate::api::schema::{
-    AgentPromptParams, AgentRenameParams, AgentSendKeysParams, AgentStartParams, AgentTarget,
-    PaneReadResult, ResponseResult,
+    AgentPromptParams, AgentQueuePromptParams, AgentRenameParams, AgentSendKeysParams,
+    AgentStartParams, AgentTarget, PaneReadResult, ResponseResult,
 };
 use crate::app::App;
 
@@ -84,10 +84,26 @@ impl App {
         request: crate::api::schema::Request,
         respond_to: std::sync::mpsc::Sender<String>,
     ) -> bool {
-        let crate::api::schema::Method::AgentPrompt(params) = request.method else {
-            return false;
+        use crate::api::schema::Method;
+
+        let validation = match request.method {
+            Method::AgentPrompt(params) => self
+                .validate_agent_prompt(request.id, &params)
+                .map(|validated| (validated, params)),
+            Method::AgentQueuePrompt(params) => {
+                self.reconcile_managed_agent_target(&params.target);
+                let validated =
+                    self.validate_prompt_target(request.id, &params.target, Some(&params));
+                let params = AgentPromptParams {
+                    target: params.target,
+                    text: params.text,
+                    wait: None,
+                };
+                validated.map(|validated| (validated, params))
+            }
+            _ => return false,
         };
-        let validated = match self.validate_agent_prompt(request.id, &params) {
+        let (validated, params) = match validation {
             Ok(validated) => validated,
             Err(response) => {
                 let _ = respond_to.send(response);
@@ -149,9 +165,30 @@ impl App {
                 "agent prompt must not be empty",
             ));
         }
-        let resolved = match self.resolve_agent_target(&params.target) {
+        self.validate_prompt_target(id, &params.target, None)
+    }
+
+    fn validate_prompt_target(
+        &self,
+        id: String,
+        target: &str,
+        queue: Option<&AgentQueuePromptParams>,
+    ) -> Result<ValidatedAgentPrompt, String> {
+        let resolved = match self.resolve_agent_target(target) {
             Ok(resolved) => resolved,
             Err(err) => return Err(encode_error_body(id, self.agent_target_error_body(err))),
+        };
+        // Preserve queue-specific refusals and use this same binding for the receipt.
+        let queue_agent = if let Some(params) = queue {
+            let Some(agent) = self.agent_info(resolved.ws_idx, resolved.pane_id) else {
+                return Err(agent_not_found(id, target));
+            };
+            if let Some((code, detail)) = queue_prompt_hold(&agent, params) {
+                return Err(encode_error(id, code, detail));
+            }
+            Some(agent)
+        } else {
+            None
         };
         let Some(terminal_id) = self
             .state
@@ -160,23 +197,20 @@ impl App {
             .and_then(|workspace| workspace.terminal_id(resolved.pane_id))
             .cloned()
         else {
-            return Err(agent_not_found(id, &params.target));
+            return Err(agent_not_found(id, target));
         };
         let Some(terminal) = self.state.terminals.get(&terminal_id) else {
-            return Err(agent_not_found(id, &params.target));
+            return Err(agent_not_found(id, target));
         };
         if terminal.state == crate::detect::AgentState::Blocked {
             return Err(encode_error(
                 id,
                 "agent_blocked",
-                format!(
-                    "agent {} is blocked and requires interactive input",
-                    params.target
-                ),
+                format!("agent {target} is blocked and requires interactive input"),
             ));
         }
         let Some(expected_agent) = terminal.effective_known_agent() else {
-            return Err(agent_not_ready(id, &params.target));
+            return Err(agent_not_ready(id, target));
         };
         // DSH's ACP client admits one turn at a time. Reject before writing;
         // terminal bytes while it is awaiting a response are not a prompt queue.
@@ -190,23 +224,21 @@ impl App {
             ));
         }
         if terminal.managed_agent_launch_pending() {
-            return Err(agent_not_ready(id, &params.target));
+            return Err(agent_not_ready(id, target));
         }
         let Some(runtime) = self.lookup_runtime_sender(resolved.ws_idx, resolved.pane_id) else {
-            return Err(agent_not_found(id, &params.target));
+            return Err(agent_not_found(id, target));
         };
         if !super::super::agents::runtime_hosts_agent(runtime, expected_agent) {
             return Err(encode_error(
                 id,
                 "agent_not_ready",
-                format!(
-                    "agent {} is no longer the pane foreground process",
-                    params.target
-                ),
+                format!("agent {target} is no longer the pane foreground process"),
             ));
         }
-        let Some(agent) = self.agent_info(resolved.ws_idx, resolved.pane_id) else {
-            return Err(agent_not_found(id, &params.target));
+        let agent = queue_agent.or_else(|| self.agent_info(resolved.ws_idx, resolved.pane_id));
+        let Some(agent) = agent else {
+            return Err(agent_not_found(id, target));
         };
         Ok(ValidatedAgentPrompt {
             id,
@@ -461,6 +493,57 @@ fn agent_not_found(id: String, target: &str) -> String {
     )
 }
 
+fn queue_prompt_hold(
+    agent: &crate::api::schema::AgentInfo,
+    params: &AgentQueuePromptParams,
+) -> Option<(&'static str, &'static str)> {
+    use crate::api::schema::AgentStatus;
+    if agent.agent.as_deref() != Some("claude") {
+        return Some((
+            "queue_prompt_unsupported",
+            "Only Claude's native mid-turn queue is supported",
+        ));
+    }
+    if params.text.is_empty()
+        || params.text.len() > 32768
+        || params
+            .text
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        return Some((
+            "invalid_queue_prompt",
+            "Queue text must be 1..32768 bytes without terminal controls",
+        ));
+    }
+    if params.target != agent.pane_id
+        || params.terminal_id != agent.terminal_id
+        || params.native_id.is_empty()
+        || params.state_change_seq != agent.state_change_seq
+        || !agent
+            .agent_session
+            .as_ref()
+            .is_some_and(|s| s.agent == "claude" && s.value == params.native_id)
+    {
+        return Some((
+            "queue_binding_changed",
+            "Native queue binding changed; no input sent",
+        ));
+    }
+    if agent.launch_pending
+        || !matches!(
+            agent.agent_status,
+            AgentStatus::Idle | AgentStatus::Done | AgentStatus::Working
+        )
+    {
+        return Some((
+            "queue_prompt_unavailable",
+            "Native queue requires a ready idle or working Claude session",
+        ));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,6 +592,166 @@ mod tests {
         start_deferred_agent_prompt(app, id, params)
             .recv_timeout(Duration::from_secs(1))
             .expect("agent prompt responds after submission")
+    }
+
+    #[tokio::test]
+    async fn queue_prompt_guards_binding_and_reuses_noninterrupting_submission() {
+        use crate::api::schema::{ErrorResponse, Method, Request};
+
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0].tabs[0].panes[&pane_id]
+            .attached_terminal_id
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        terminal.set_agent_session_ref(
+            "herdr:claude".into(),
+            "claude".into(),
+            crate::agent_resume::AgentSessionRef::id("native-one"),
+            Some(1),
+        );
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        let (runtime, mut input) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        runtime.test_process_pty_bytes(b"\x1b[?2004h");
+        app.state.insert_test_runtime(pane_id, runtime);
+        let agent = app.agent_info(0, pane_id).unwrap();
+        let params = AgentQueuePromptParams {
+            target: agent.pane_id.clone(),
+            text: "Read this message after the current tool".into(),
+            terminal_id: agent.terminal_id.clone(),
+            native_id: "native-one".into(),
+            state_change_seq: agent.state_change_seq,
+        };
+        for harness in ["codex", "dsh", "pi", "omp"] {
+            let mut other = agent.clone();
+            other.agent = Some(harness.into());
+            assert_eq!(
+                queue_prompt_hold(&other, &params).unwrap().0,
+                "queue_prompt_unsupported"
+            );
+        }
+        let run = |app: &mut App, params| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            assert!(app.handle_deferred_agent_api_request(
+                Request {
+                    id: "queue".into(),
+                    method: Method::AgentQueuePrompt(params),
+                },
+                tx,
+            ));
+            rx.recv_timeout(Duration::from_secs(2)).unwrap()
+        };
+        let assert_rejected = |app: &mut App, params, code: &str| {
+            crate::thread_spawn::test_hook::fail_next_spawns(1);
+            let response = run(app, params);
+            let error: ErrorResponse = serde_json::from_str(&response).unwrap();
+            assert_eq!(error.error.code, code);
+            assert!(
+                crate::thread_spawn::spawn_named("probe", || {}).is_err(),
+                "a rejected queue prompt must leave the waiter failure unconsumed"
+            );
+        };
+        for rejected in [
+            AgentQueuePromptParams {
+                terminal_id: "replacement".into(),
+                ..params.clone()
+            },
+            AgentQueuePromptParams {
+                state_change_seq: params.state_change_seq + 1,
+                ..params.clone()
+            },
+        ] {
+            assert_rejected(&mut app, rejected, "queue_binding_changed");
+        }
+        for text in [String::new(), "escape\x1b".into(), "é".repeat(16385)] {
+            let rejected = AgentQueuePromptParams {
+                text,
+                ..params.clone()
+            };
+            assert_rejected(&mut app, rejected, "invalid_queue_prompt");
+        }
+
+        crate::thread_spawn::test_hook::fail_next_spawns(1);
+        let response = run(&mut app, params.clone());
+        let error: ErrorResponse = serde_json::from_str(&response).unwrap();
+        assert_eq!(error.error.code, "agent_prompt_failed");
+        assert!(error.error.message.contains("prompt completion waiter"));
+        assert!(
+            tokio::time::timeout(AGENT_PROMPT_SUBMIT_DELAY, input.recv())
+                .await
+                .is_err(),
+            "validation and waiter failures must produce no terminal input"
+        );
+
+        let response = run(&mut app, params.clone());
+        let response: SuccessResponse = serde_json::from_str(&response).unwrap();
+        let ResponseResult::AgentPrompted { agent } = response.result else {
+            panic!("expected a queue transport receipt");
+        };
+        assert_eq!(agent.pane_id, params.target);
+        assert_eq!(agent.terminal_id, params.terminal_id);
+        assert_eq!(agent.agent.as_deref(), Some("claude"));
+        assert_eq!(agent.agent_session.unwrap().value, params.native_id);
+        assert_eq!(agent.state_change_seq, params.state_change_seq);
+        assert_eq!(
+            input.try_recv().unwrap(),
+            Bytes::from(format!("\x1b[200~{}\x1b[201~", params.text))
+        );
+        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\r"));
+        assert!(input.try_recv().is_err());
+
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal
+            .set_agent_session_ref_for_session_start(
+                "herdr:claude".into(),
+                "claude".into(),
+                crate::agent_resume::AgentSessionRef::id("native-two"),
+                Some(2),
+                Some("resume".into()),
+            )
+            .expect("replacement Claude session should be accepted");
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        let current = app.agent_info(0, pane_id).unwrap();
+        let stale = AgentQueuePromptParams {
+            state_change_seq: current.state_change_seq,
+            ..params.clone()
+        };
+        assert_rejected(&mut app, stale, "queue_binding_changed");
+
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Blocked);
+        let current = app.agent_info(0, pane_id).unwrap();
+        let blocked = AgentQueuePromptParams {
+            native_id: "native-two".into(),
+            state_change_seq: current.state_change_seq,
+            ..params
+        };
+        assert_rejected(&mut app, blocked.clone(), "queue_prompt_unavailable");
+
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        terminal.begin_managed_agent(
+            "claude-worker".into(),
+            Agent::Claude,
+            std::time::Instant::now(),
+            Duration::from_secs(60),
+            Duration::from_secs(120),
+        );
+        let current = app.agent_info(0, pane_id).unwrap();
+        assert_eq!(current.agent_status, AgentStatus::Working);
+        assert!(current.launch_pending);
+        let pending = AgentQueuePromptParams {
+            state_change_seq: current.state_change_seq,
+            ..blocked
+        };
+        assert_rejected(&mut app, pending, "queue_prompt_unavailable");
+        assert!(
+            tokio::time::timeout(AGENT_PROMPT_SUBMIT_DELAY, input.recv())
+                .await
+                .is_err(),
+            "a changed binding or unavailable queue must produce no terminal input"
+        );
     }
 
     #[cfg(windows)]

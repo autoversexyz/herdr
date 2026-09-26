@@ -65,6 +65,13 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
             })?;
             super::print_response(&response)
         }
+        Operation::QueuePrompt(params) => {
+            let response = super::send_request(&Request {
+                id: "cli:agent:queue-prompt".into(),
+                method: Method::AgentQueuePrompt(params),
+            })?;
+            super::print_response(&response)
+        }
         Operation::Start(params) => agent_start(params),
         Operation::Attach(params) => agent_attach(params),
         Operation::Explain(params) => agent_explain(params),

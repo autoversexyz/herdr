@@ -7,9 +7,9 @@ use crate::api::schema::agents::{
     AgentSendKeysProjection, AgentStartProjection, AgentWaitProjection,
 };
 use crate::api::schema::{
-    AgentPromptAnswerParams, AgentPromptParams, AgentReadParams, AgentRenameParams,
-    AgentSendKeysParams, AgentStartParams, AgentStatus, AgentTarget, AgentWaitParams, ReadFormat,
-    ReadSource, READ_FORMATS, READ_SOURCES,
+    AgentPromptAnswerParams, AgentPromptParams, AgentQueuePromptParams, AgentReadParams,
+    AgentRenameParams, AgentSendKeysParams, AgentStartParams, AgentStatus, AgentTarget,
+    AgentWaitParams, ReadFormat, ReadSource, READ_FORMATS, READ_SOURCES,
 };
 use crate::cli::dsh::{self, Invocation, Options};
 pub(crate) use crate::cli::projection::optional_text;
@@ -269,6 +269,7 @@ pub(crate) enum Operation {
     Wait(AgentWaitParams),
     Prompt(AgentPromptParams),
     PromptAnswer(AgentPromptAnswerParams),
+    QueuePrompt(AgentQueuePromptParams),
     Start(AgentStartParams),
     Attach(Attach),
     Explain(Explain),
@@ -303,6 +304,11 @@ pub(crate) fn command() -> Command {
         .subcommand(
             Command::new("prompt-answer")
                 .about("Inspect or answer an unchanged native numbered prompt")
+                .arg(Arg::new("json").value_name("JSON").required(true)),
+        )
+        .subcommand(
+            Command::new("queue-prompt")
+                .about("Submit to a verified Claude native session without interrupting it")
                 .arg(Arg::new("json").value_name("JSON").required(true)),
         )
         .subcommand(leaf("start", AgentStartProjection::arguments(), "Start a supported interactive agent in an existing pane")
@@ -352,6 +358,18 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError
             }
             let params = serde_json::from_str(json).map_err(std::io::Error::from)?;
             Operation::PromptAnswer(params)
+        }
+        "queue-prompt" => {
+            let Some(json) = matches.get_one::<String>("json") else {
+                return Err(ParseError::Usage("missing queue prompt JSON".into()));
+            };
+            if json.len() > 65536 {
+                return Err(ParseError::Usage(
+                    "queue prompt request exceeds 64KiB".into(),
+                ));
+            }
+            let params = serde_json::from_str(json).map_err(std::io::Error::from)?;
+            Operation::QueuePrompt(params)
         }
         "start" => Operation::Start(AgentStartProjection::from_matches(matches)?),
         "attach" => Operation::Attach(AttachProjection::from_matches(matches)?),
