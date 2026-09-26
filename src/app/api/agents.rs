@@ -84,10 +84,16 @@ impl App {
         request: crate::api::schema::Request,
         respond_to: std::sync::mpsc::Sender<String>,
     ) -> bool {
-        let crate::api::schema::Method::AgentPrompt(params) = request.method else {
-            return false;
+        let result = match request.method {
+            crate::api::schema::Method::AgentPrompt(params) => {
+                self.queue_agent_prompt(request.id, params)
+            }
+            crate::api::schema::Method::AgentQueuePrompt(params) => {
+                self.queue_verified_prompt(request.id, params)
+            }
+            _ => return false,
         };
-        match self.queue_agent_prompt(request.id, params) {
+        match result {
             Ok((id, agent, completion)) => {
                 std::thread::spawn(move || {
                     let response = match completion.recv() {
@@ -106,6 +112,37 @@ impl App {
             }
         }
         true
+    }
+
+    fn queue_verified_prompt(
+        &mut self,
+        id: String,
+        params: crate::api::schema::AgentQueuePromptParams,
+    ) -> Result<
+        (
+            String,
+            crate::api::schema::AgentInfo,
+            std::sync::mpsc::Receiver<std::io::Result<()>>,
+        ),
+        String,
+    > {
+        self.reconcile_managed_agent_target(&params.target);
+        let agent = self
+            .agent_info_for_target(&params.target)
+            .map_err(|err| encode_error_body(id.clone(), self.agent_target_error_body(err)))?;
+        if let Some((code, detail)) = queue_prompt_hold(&agent, &params) {
+            return Err(encode_error(id, code, detail));
+        }
+        // The existing actor writes paste + Enter. No Escape, cancellation,
+        // retry, second queue, or screen parsing is introduced here.
+        self.queue_agent_prompt(
+            id,
+            AgentPromptParams {
+                target: params.target,
+                text: params.text,
+                wait: None,
+            },
+        )
     }
 
     fn queue_agent_prompt(
@@ -400,6 +437,57 @@ fn agent_not_found(id: String, target: &str) -> String {
     )
 }
 
+fn queue_prompt_hold(
+    agent: &crate::api::schema::AgentInfo,
+    params: &crate::api::schema::AgentQueuePromptParams,
+) -> Option<(&'static str, &'static str)> {
+    use crate::api::schema::AgentStatus;
+    if agent.agent.as_deref() != Some("claude") {
+        return Some((
+            "queue_prompt_unsupported",
+            "Only Claude's native mid-turn queue is supported",
+        ));
+    }
+    if params.text.is_empty()
+        || params.text.len() > 32768
+        || params
+            .text
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        return Some((
+            "invalid_queue_prompt",
+            "Queue text must be 1..32768 bytes without terminal controls",
+        ));
+    }
+    if params.target != agent.pane_id
+        || params.terminal_id != agent.terminal_id
+        || params.native_id.is_empty()
+        || params.state_change_seq != agent.state_change_seq
+        || !agent
+            .agent_session
+            .as_ref()
+            .is_some_and(|s| s.agent == "claude" && s.value == params.native_id)
+    {
+        return Some((
+            "queue_binding_changed",
+            "Native queue binding changed; no input sent",
+        ));
+    }
+    if agent.launch_pending
+        || !matches!(
+            agent.agent_status,
+            AgentStatus::Idle | AgentStatus::Done | AgentStatus::Working
+        )
+    {
+        return Some((
+            "queue_prompt_unavailable",
+            "Native queue requires a ready idle or working Claude session",
+        ));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -448,6 +536,99 @@ mod tests {
         start_deferred_agent_prompt(app, id, params)
             .recv_timeout(Duration::from_secs(1))
             .expect("agent prompt responds after submission")
+    }
+
+    #[tokio::test]
+    async fn queue_prompt_guards_binding_and_reuses_noninterrupting_submission() {
+        use crate::api::schema::{AgentQueuePromptParams, Method, Request};
+        let mut app = app_with_agent();
+        let pane_id = app.state.workspaces[0].tabs[0].root_pane;
+        let terminal_id = app.state.workspaces[0]
+            .terminal_id(pane_id)
+            .unwrap()
+            .clone();
+        let terminal = app.state.terminals.get_mut(&terminal_id).unwrap();
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        terminal.set_agent_session_ref(
+            "herdr:claude".into(),
+            "claude".into(),
+            crate::agent_resume::AgentSessionRef::id("native-one"),
+            Some(1),
+        );
+        terminal.set_detected_state(Some(Agent::Claude), AgentState::Working);
+        let (runtime, mut input) = crate::terminal::TerminalRuntime::test_with_channel(80, 24);
+        runtime.test_process_pty_bytes(b"\x1b[?2004h");
+        app.state.insert_test_runtime(pane_id, runtime);
+        let agent = app.agent_info(0, pane_id).unwrap();
+        let params = AgentQueuePromptParams {
+            target: agent.pane_id.clone(),
+            text: "Read this message after the current tool".into(),
+            terminal_id: agent.terminal_id.clone(),
+            native_id: "native-one".into(),
+            state_change_seq: agent.state_change_seq,
+        };
+        assert_eq!(queue_prompt_hold(&agent, &params), None);
+        for mut changed in [agent.clone(), agent.clone(), agent.clone(), agent.clone()]
+            .into_iter()
+            .enumerate()
+        {
+            match changed.0 {
+                0 => changed.1.terminal_id = "replacement".into(),
+                1 => changed.1.agent_session.as_mut().unwrap().value = "replacement".into(),
+                2 => changed.1.state_change_seq += 1,
+                _ => changed.1.agent_status = AgentStatus::Blocked,
+            }
+            assert!(queue_prompt_hold(&changed.1, &params).is_some());
+        }
+        for harness in ["codex", "dsh", "pi", "omp"] {
+            let mut other = agent.clone();
+            other.agent = Some(harness.into());
+            assert_eq!(
+                queue_prompt_hold(&other, &params).unwrap().0,
+                "queue_prompt_unsupported"
+            );
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        assert!(app.handle_deferred_agent_api_request(
+            Request {
+                id: "queue".into(),
+                method: Method::AgentQueuePrompt(params.clone())
+            },
+            tx
+        ));
+        let response = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let response: SuccessResponse = serde_json::from_str(&response).unwrap();
+        assert!(matches!(
+            response.result,
+            ResponseResult::AgentPrompted { .. }
+        ));
+        assert_eq!(
+            input.try_recv().unwrap(),
+            Bytes::from(format!("\x1b[200~{}\x1b[201~", params.text))
+        );
+        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\r"));
+        assert!(input.try_recv().is_err());
+        let mut invalid = params.clone();
+        invalid.native_id = "old".into();
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.handle_deferred_agent_api_request(
+            Request {
+                id: "old".into(),
+                method: Method::AgentQueuePrompt(invalid),
+            },
+            tx,
+        );
+        assert!(rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap()
+            .contains("queue_binding_changed"));
+        assert!(input.try_recv().is_err());
+        let mut invalid = params;
+        invalid.text = "escape\x1b".into();
+        assert_eq!(
+            queue_prompt_hold(&agent, &invalid).unwrap().0,
+            "invalid_queue_prompt"
+        );
     }
 
     #[cfg(windows)]

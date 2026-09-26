@@ -129,6 +129,8 @@ pub enum Method {
     AgentExplain(AgentTarget),
     #[serde(rename = "agent.send_keys")]
     AgentSendKeys(AgentSendKeysParams),
+    #[serde(rename = "agent.queue_prompt")]
+    AgentQueuePrompt(AgentQueuePromptParams),
     #[serde(rename = "agent.prompt_answer")]
     AgentPromptAnswer(AgentPromptAnswerParams),
     #[serde(rename = "agent.rename")]

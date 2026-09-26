@@ -1387,6 +1387,37 @@
           },
           "type": "object"
         },
+        "AgentQueuePromptParams": {
+          "additionalProperties": false,
+          "description": "Submit without interrupting one verified Claude native turn. This is a PTY\ntransport receipt, not proof of native acceptance or message processing.",
+          "properties": {
+            "native_id": {
+              "type": "string"
+            },
+            "state_change_seq": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "target": {
+              "type": "string"
+            },
+            "terminal_id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "text",
+            "terminal_id",
+            "native_id",
+            "state_change_seq"
+          ],
+          "type": "object"
+        },
         "AgentReadParams": {
           "properties": {
             "format": {
@@ -5528,6 +5559,22 @@
             },
             "params": {
               "$ref": "#/schemas/request/$defs/AgentSendKeysParams"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "agent.queue_prompt",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/schemas/request/$defs/AgentQueuePromptParams"
             }
           },
           "required": [

@@ -21,6 +21,7 @@ pub(super) fn run_agent_command(args: &[String]) -> std::io::Result<i32> {
         "get" => agent_get(&args[1..]),
         "read" => agent_read(&args[1..]),
         "send-keys" => agent_send_keys(&args[1..]),
+        "queue-prompt" => agent_queue_prompt(&args[1..]),
         "prompt-answer" => agent_prompt_answer(&args[1..]),
         "prompt" => agent_prompt(&args[1..]),
         "rename" => agent_rename(&args[1..]),
@@ -169,6 +170,22 @@ fn agent_explain(args: &[String]) -> std::io::Result<i32> {
         print_agent_explain_text(&explain, verbose);
     }
     Ok(0)
+}
+
+fn agent_queue_prompt(args: &[String]) -> std::io::Result<i32> {
+    let [json] = args else {
+        eprintln!("usage: herdr agent queue-prompt JSON");
+        return Ok(2);
+    };
+    if json.len() > 65536 {
+        eprintln!("queue prompt request exceeds 64KiB");
+        return Ok(2);
+    }
+    let params = serde_json::from_str(json)?;
+    super::print_response(&super::send_request(&Request {
+        id: "cli:agent:queue-prompt".into(),
+        method: Method::AgentQueuePrompt(params),
+    })?)
 }
 
 fn agent_prompt_answer(args: &[String]) -> std::io::Result<i32> {
@@ -947,6 +964,7 @@ fn print_agent_help() {
     eprintln!("  herdr agent get <target>");
     eprintln!("  herdr agent read <target> [--source visible|recent|recent-unwrapped|detection] [--lines N] [--format text|ansi] [--ansi]");
     eprintln!("  herdr agent send-keys <target> <key> [key ...]");
+    eprintln!("  herdr agent queue-prompt JSON  (guarded Claude native queue)");
     eprintln!("  herdr agent prompt <target> <text> [--wait] [--until STATUS]... [--timeout MS]");
     eprintln!("  herdr agent rename <target> <name>|--clear");
     eprintln!("  herdr agent focus <target>");

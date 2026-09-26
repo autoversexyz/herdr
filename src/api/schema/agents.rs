@@ -22,6 +22,18 @@ pub struct AgentSendKeysParams {
     pub keys: Vec<String>,
 }
 
+/// Submit without interrupting one verified Claude native turn. This is a PTY
+/// transport receipt, not proof of native acceptance or message processing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AgentQueuePromptParams {
+    pub target: String,
+    pub text: String,
+    pub terminal_id: String,
+    pub native_id: String,
+    pub state_change_seq: u64,
+}
+
 /// Read a blocked native menu, or answer the exact menu previously inspected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
