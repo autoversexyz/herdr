@@ -609,7 +609,10 @@ mod tests {
         );
         for (redraw, confirmed) in [
             (selected.replace("~/project", "~/other-folder"), false),
-            (selected.replace("Back to Agent Command Center", "Exit"), false),
+            (
+                selected.replace("Back to Agent Command Center", "Exit"),
+                false,
+            ),
             (selected, true),
         ] {
             let (runtime, mut input) = TerminalRuntime::test_with_channel(100, 24);
