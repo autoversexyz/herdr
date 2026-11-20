@@ -1,4 +1,5 @@
 //! Native dialog inspection and guarded input belong to the runtime, not clients.
+use std::cmp::Ordering;
 use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -52,24 +53,41 @@ fn numbered_options(screen: &str) -> Option<Vec<serde_json::Value>> {
     (result.len() >= 2).then_some(result)
 }
 
-struct ClaudeTrustMenu<'a> {
+struct TrustMenu<'a> {
+    agent: Agent,
     screen: &'a str,
     outside_options: (&'a str, &'a str, &'a str),
+    labels: [&'a str; 2],
     selected: usize,
 }
 
-impl<'a> ClaudeTrustMenu<'a> {
-    fn parse(screen: &'a str, region: &str) -> Option<Self> {
+impl<'a> TrustMenu<'a> {
+    fn parse(agent: Agent, screen: &'a str, region: &'a str) -> Option<Self> {
         if !bounded_menu(region) {
             return None;
         }
+        let (heading, footer, marker, body_prefix) = match agent {
+            Agent::Claude => (
+                "Accessing workspace:",
+                "Enter to confirm · Esc to cancel",
+                '❯',
+                "Quick safety check: Is this a project you created or one you trust?",
+            ),
+            Agent::Codex => (
+                "Folder access",
+                "enter continue · esc back",
+                '›',
+                "Trust this folder? Codex can read, edit, and run files here,",
+            ),
+            _ => return None,
+        };
         let mut lines = region.lines().filter(|line| !line.trim().is_empty());
-        if lines.next_back()?.trim() != "Enter to confirm · Esc to cancel" {
+        if lines.next_back()?.trim() != footer {
             return None;
         }
         let second = lines.next_back()?;
         let first = lines.next_back()?;
-        if lines.next()?.trim() != "Accessing workspace:" {
+        if lines.next()?.trim() != heading {
             return None;
         }
         let path = lines.next()?.trim();
@@ -77,40 +95,45 @@ impl<'a> ClaudeTrustMenu<'a> {
             return None;
         }
         let body = lines.map(str::trim).collect::<Vec<_>>().join(" ");
-        let safety_check = "Quick safety check: Is this a project you created or one you trust?";
-        if !body.starts_with(safety_check) {
+        if !body.starts_with(body_prefix)
+            || (agent == Agent::Codex && !body.ends_with("Your trust decision will be saved."))
+        {
             return None;
         }
 
         let mut selected = None;
-        let rows = [first, second].into_iter().zip(CLAUDE_TRUST_LABELS);
-        for (index, (row, label)) in rows.enumerate() {
-            let row = row.trim();
-            let label_text = match row.strip_prefix('❯') {
-                Some(text) => {
-                    if selected.replace(index).is_some() {
-                        return None;
-                    }
-                    text.trim_start()
+        let mut labels = [first.trim(), second.trim()];
+        for (index, label) in labels.iter_mut().enumerate() {
+            if let Some(text) = label.strip_prefix(marker) {
+                if selected.replace(index).is_some() {
+                    return None;
                 }
-                None => row,
-            };
-            if label_text != label {
+                *label = text.trim_start();
+            }
+        }
+        if agent == Agent::Codex {
+            labels[0] = labels[0].strip_prefix("1. ")?;
+            labels[1] = labels[1].strip_prefix("2. ")?;
+            if labels[0] != "Trust and continue" {
                 return None;
             }
+        } else if labels != CLAUDE_TRUST_LABELS {
+            return None;
         }
         // Keep the complete detection screen outside the two option rows.
         let (before_second, after_options) = screen.rsplit_once(second)?;
         let (before_options, between_options) = before_second.rsplit_once(first)?;
         Some(Self {
+            agent,
             screen,
             outside_options: (before_options, between_options, after_options),
+            labels,
             selected: selected?,
         })
     }
 
-    fn options() -> Vec<serde_json::Value> {
-        CLAUDE_TRUST_LABELS
+    fn options(&self) -> Vec<serde_json::Value> {
+        self.labels
             .iter()
             .enumerate()
             .map(|(index, label)| {
@@ -118,6 +141,14 @@ impl<'a> ClaudeTrustMenu<'a> {
                 serde_json::json!({"key": key, "label": label})
             })
             .collect()
+    }
+
+    fn navigation_key(&self, selected: usize) -> Option<KeyCode> {
+        match selected.cmp(&self.selected) {
+            Ordering::Less => Some(KeyCode::Up),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(KeyCode::Down),
+        }
     }
 }
 
@@ -133,7 +164,7 @@ fn send_prompt_key(runtime: &TerminalRuntime, seq: u64, key: KeyCode) -> io::Res
 
 fn confirm_trust_selection(
     runtime: &TerminalRuntime,
-    menu: &ClaudeTrustMenu<'_>,
+    menu: &TrustMenu<'_>,
     selected: usize,
     mut observed_seq: u64,
 ) -> io::Result<()> {
@@ -154,13 +185,15 @@ fn confirm_trust_selection(
         }
         std::thread::sleep(SELECTION_POLL_INTERVAL);
     };
-    let after = ClaudeTrustMenu::parse(&screen, after_last_horizontal_rule(&screen));
+    let after = TrustMenu::parse(menu.agent, &screen, after_last_horizontal_rule(&screen));
     if !after.is_some_and(|after| {
-        after.outside_options == menu.outside_options && after.selected == selected
+        after.outside_options == menu.outside_options
+            && after.labels == menu.labels
+            && after.selected == selected
     }) {
         return Err(io::Error::other("trust menu changed after navigation"));
     }
-    if !runtime_hosts_agent(runtime, Agent::Claude) {
+    if !runtime_hosts_agent(runtime, menu.agent) {
         return Err(io::Error::other(
             "foreground agent changed after navigation",
         ));
@@ -170,18 +203,13 @@ fn confirm_trust_selection(
 
 fn answer_trust_menu(
     runtime: &TerminalRuntime,
-    menu: &ClaudeTrustMenu<'_>,
+    menu: &TrustMenu<'_>,
     selected: usize,
     seq: u64,
 ) -> Result<(), (&'static str, io::Error)> {
-    if selected == menu.selected {
+    let Some(key) = menu.navigation_key(selected) else {
         return send_prompt_key(runtime, seq, KeyCode::Enter)
             .map_err(|err| ("native_prompt_not_sent", err));
-    }
-    let key = if selected > menu.selected {
-        KeyCode::Down
-    } else {
-        KeyCode::Up
     };
     send_prompt_key(runtime, seq, key).map_err(|err| ("native_prompt_not_sent", err))?;
     let confirmed = confirm_trust_selection(runtime, menu, selected, seq);
@@ -266,20 +294,20 @@ impl App {
         // above the modal is not part of the displayed decision, but remains
         // covered by the full-screen fingerprint and final content guard.
         let screen = after_last_horizontal_rule(&full_screen);
-        let trust_menu = if startup && expected_agent == Agent::Claude {
-            ClaudeTrustMenu::parse(&full_screen, screen)
+        let trust_menu = if startup {
+            TrustMenu::parse(expected_agent, &full_screen, screen)
         } else {
             None
         };
-        let choices = if trust_menu.is_some() {
-            ClaudeTrustMenu::options()
+        let choices = if let Some(menu) = &trust_menu {
+            menu.options()
         } else if let Some(choices) = numbered_options(screen) {
             choices
         } else {
             return encode_error(
                 id,
                 "native_prompt_unsupported",
-                "a complete bounded numbered menu or Claude startup trust menu is required",
+                "a complete bounded numbered menu or supported startup trust menu is required",
             );
         };
         let binding = serde_json::json!({
@@ -493,7 +521,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn codex_startup_prompt_requires_exact_binding_and_sends_one_digit() {
+    async fn codex_startup_trust_requires_exact_binding_and_confirms_current_selection() {
         let (mut app, read, mut input) = startup_fixture(Agent::Codex, CODEX_TRUST);
         let unbound = AgentPromptAnswerParams {
             terminal_id: None,
@@ -514,8 +542,11 @@ mod tests {
         assert_eq!(prompt["startup"], true);
         assert!(prompt["binding"]["native_session"].is_null());
         assert_eq!(
-            prompt["options"][0],
-            serde_json::json!({"key": "1", "label": "Trust and continue"})
+            prompt["options"],
+            serde_json::json!([
+                {"key": "1", "label": "Trust and continue"},
+                {"key": "2", "label": "Back to Agent Command Center"}
+            ])
         );
         let answer = AgentPromptAnswerParams {
             option: Some("1".into()),
@@ -536,11 +567,75 @@ mod tests {
         assert_eq!(value["error"]["code"], "native_prompt_changed");
         assert!(input.try_recv().is_err());
 
+        let navigate = AgentPromptAnswerParams {
+            option: Some("2".into()),
+            ..answer.clone()
+        };
+        let value = request(&mut app, navigate);
+        assert_eq!(value["error"]["code"], "native_prompt_partial");
+        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\x1b[B"));
+        assert!(input.try_recv().is_err());
+
         let value = request(&mut app, answer);
         assert_eq!(value["result"]["prompt"]["startup"], true);
         assert_eq!(value["result"]["prompt"]["input_queued"], true);
-        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"1"));
+        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\r"));
         assert!(input.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn codex_startup_menu_with_a_different_footer_sends_one_digit() {
+        let screen = CODEX_TRUST.replace("esc back", "esc skip");
+        let (mut app, read, mut input) = startup_fixture(Agent::Codex, &screen);
+        let value = request(&mut app, read.clone());
+        let prompt = &value["result"]["prompt"];
+        let answer = AgentPromptAnswerParams {
+            option: Some("2".into()),
+            expected_prompt: Some(prompt["fingerprint"].as_str().unwrap().into()),
+            ..read
+        };
+
+        let value = request(&mut app, answer);
+        assert_eq!(value["result"]["prompt"]["input_queued"], true);
+        assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"2"));
+        assert!(input.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn codex_startup_trust_confirms_option_two_only_after_the_expected_redraw() {
+        let selected = CODEX_TRUST.replace(
+            "› 1. Trust and continue\r\n  2. Back to Agent Command Center",
+            "  1. Trust and continue\r\n› 2. Back to Agent Command Center",
+        );
+        for (redraw, confirmed) in [
+            (selected.replace("~/project", "~/other-folder"), false),
+            (selected.replace("Back to Agent Command Center", "Exit"), false),
+            (selected, true),
+        ] {
+            let (runtime, mut input) = TerminalRuntime::test_with_channel(100, 24);
+            runtime.test_process_pty_bytes(CODEX_TRUST.as_bytes());
+            let seq = runtime.content_seq();
+            let screen = runtime.detection_text();
+            let region = after_last_horizontal_rule(&screen);
+            let menu = TrustMenu::parse(Agent::Codex, &screen, region).unwrap();
+            let key = menu.navigation_key(1).unwrap();
+            send_prompt_key(&runtime, seq, key).unwrap();
+            assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\x1b[B"));
+
+            let redraw = format!("\x1b[H\x1b[2J{redraw}");
+            runtime.test_process_pty_bytes(redraw.as_bytes());
+            let result = confirm_trust_selection(&runtime, &menu, 1, seq);
+            if confirmed {
+                result.unwrap();
+                assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\r"));
+            } else {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "trust menu changed after navigation"
+                );
+            }
+            assert!(input.try_recv().is_err());
+        }
     }
 
     #[tokio::test]
@@ -619,7 +714,7 @@ mod tests {
             let seq = runtime.content_seq();
             let screen = runtime.detection_text();
             let region = after_last_horizontal_rule(&screen);
-            let menu = ClaudeTrustMenu::parse(&screen, region).unwrap();
+            let menu = TrustMenu::parse(Agent::Claude, &screen, region).unwrap();
             send_prompt_key(&runtime, seq, KeyCode::Down).unwrap();
             assert_eq!(input.try_recv().unwrap(), Bytes::from_static(b"\x1b[B"));
 
