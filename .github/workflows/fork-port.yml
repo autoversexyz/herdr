@@ -53,6 +53,7 @@ jobs:
           key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - name: Seed translate-c from a GitHub mirror (codeberg outages)
         if: steps.zig-packages.outputs.cache-hit != 'true'
+        working-directory: vendor/libghostty-vt
         run: |
           # Zig addresses packages by content hash, so the mirror is used only if it matches.
           expected=translate_c-0.0.0-Q_BUWhVNBwDOEcIqub4VFPJPB6D9dgwzUMHTX5KWr8Xr
@@ -110,6 +111,7 @@ jobs:
           key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - name: Seed translate-c from a GitHub mirror (codeberg outages)
         if: steps.zig-packages.outputs.cache-hit != 'true'
+        working-directory: vendor/libghostty-vt
         run: |
           # Zig addresses packages by content hash, so the mirror is used only if it matches.
           expected=translate_c-0.0.0-Q_BUWhVNBwDOEcIqub4VFPJPB6D9dgwzUMHTX5KWr8Xr
