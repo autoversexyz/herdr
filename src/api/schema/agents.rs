@@ -42,10 +42,13 @@ pub struct AgentQueuePromptParams {
 }
 
 /// Read a blocked native menu, or answer the exact menu previously inspected.
+/// Startup requires the exact pane ID as target and a matching terminal ID.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AgentPromptAnswerParams {
     pub target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

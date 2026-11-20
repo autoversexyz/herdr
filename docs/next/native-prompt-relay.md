@@ -10,29 +10,37 @@ herdr agent prompt-answer '{"target":"w1:p1"}'
 herdr agent prompt-answer '{"target":"w1:p1","expected_prompt":"TOKEN_FROM_PREVIEW","option":"2"}'
 ```
 
-The `native_prompt` response contains the original dialog text, literal options,
-native binding and fingerprint. Menus require at least two explicit single-digit
-numbered options, no duplicate keys, and a complete detection region within
-32 lines / 4096 bytes. The existing `after_last_horizontal_rule` structural helper
-separates the dialog from transcript history; when no separator exists it retains
-the whole region. The fingerprint still covers the full detection screen.
-Other prompts remain manual. No detector rule, default
-answer or permission decision is introduced.
+For a blocked pending launch without a native session, both calls require the
+exact public pane ID as `target` and its matching `terminal_id`. The response
+reports `startup: true` and the binding contains `native_session: null`.
 
-Both reads and writes require a blocked identified native conversation and its
-foreground process. Apply recomputes the fingerprint from the screen, conversation,
-terminal, pane, harness and state transition. It rejects changed evidence or an
-unlisted option, encodes one key with the current native keyboard protocol, then
-checks the content revision and enqueues under the terminal content writer lock.
-No trailing Enter or chat prompt is sent. This code runs only on explicit API
-requests; rendering, normal detection and background pane loops add no work.
+```sh
+herdr agent prompt-answer '{"target":"w1:p1","terminal_id":"term_1"}'
+herdr agent prompt-answer '{"target":"w1:p1","terminal_id":"term_1","expected_prompt":"TOKEN_FROM_PREVIEW","option":"2"}'
+```
 
-`input_queued` means the runtime accepted a transport write, not that the native
-application accepted the choice. The caller must read back and reconcile native
-state. A timeout is ambiguous: never retry a key merely because the response was
-lost. Clients must durably reserve their attempt before calling apply. Herdr does
-not authenticate a human choice or persist client idempotency keys.
+The `native_prompt` response contains the dialog text, options, binding and
+fingerprint. Established conversations require a blocked agent with a native
+session and report `startup: false`. In both cases Herdr verifies the foreground
+agent. The dialog region starts after the last horizontal rule when one exists,
+and is limited to 32 lines and 4096 bytes. The fingerprint covers the full
+detection screen, pane, terminal, harness, session and state transition.
+
+Numbered menus require at least two distinct single-digit options. Apply sends
+one digit. Claude's unnumbered startup trust menu exposes indices `1` and `2`.
+Apply sends Enter if the requested option is already selected. Otherwise it sends
+one arrow key and waits briefly for the marker to reach the requested row. It
+checks that the rest of the detection screen and the option labels still match.
+Each enqueue checks the verified content revision under the terminal writer lock.
+If navigation is queued and confirmation cannot proceed, the API returns
+`native_prompt_partial`. Inspect the resulting state before considering another
+attempt.
+
+`input_queued` records transport acceptance. Native acceptance remains
+`unverified` until the caller reads back and reconciles the native state. Clients
+must durably reserve their attempt before calling apply and treat timeouts as
+ambiguous.
 
 This adds an optional method without changing existing key-input methods or
 frozen endpoint codecs. Clients must check the advertised method and installed
-server compatibility before using it. There is no unsafe unguarded fallback.
+server compatibility before using it.

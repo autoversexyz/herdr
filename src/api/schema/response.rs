@@ -39,6 +39,18 @@ pub struct ErrorBody {
     pub message: String,
 }
 
+fn native_prompt_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "object",
+        "properties": {
+            "startup": {
+                "description": "True for a blocked pending launch without a native session.",
+                "type": "boolean"
+            }
+        }
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ResponseResult {
@@ -188,6 +200,7 @@ pub enum ResponseResult {
         explain: serde_json::Value,
     },
     NativePrompt {
+        #[schemars(schema_with = "native_prompt_schema")]
         prompt: serde_json::Value,
     },
     SubscriptionStarted {},

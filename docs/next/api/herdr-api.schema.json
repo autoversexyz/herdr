@@ -1320,7 +1320,7 @@
         },
         "AgentPromptAnswerParams": {
           "additionalProperties": false,
-          "description": "Read a blocked native menu, or answer the exact menu previously inspected.",
+          "description": "Read a blocked native menu, or answer the exact menu previously inspected.\nStartup requires the exact pane ID as target and a matching terminal ID.",
           "properties": {
             "expected_prompt": {
               "type": [
@@ -1336,6 +1336,12 @@
             },
             "target": {
               "type": "string"
+            },
+            "terminal_id": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
@@ -10199,7 +10205,15 @@
             },
             {
               "properties": {
-                "prompt": true,
+                "prompt": {
+                  "properties": {
+                    "startup": {
+                      "description": "True for a blocked pending launch without a native session.",
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                },
                 "type": {
                   "const": "native_prompt",
                   "type": "string"

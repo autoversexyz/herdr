@@ -190,7 +190,14 @@ fn agent_projection_rename_and_local_adapters() {
 fn agent_prompt_answer_projection_decodes_bounded_json() {
     let preview = r#"{"target":"w1:p1"}"#;
     let answer = r#"{"target":"w1:p1","expected_prompt":"fingerprint","option":"2"}"#;
-    for json in [preview, answer] {
+    let startup = serde_json::json!({
+        "target": "w1:p1",
+        "terminal_id": "term_1",
+        "expected_prompt": "fingerprint",
+        "option": "2",
+    })
+    .to_string();
+    for json in [preview, answer, startup.as_str()] {
         assert_eq!(
             params(&["prompt-answer", json]),
             serde_json::from_str::<serde_json::Value>(json).unwrap()
