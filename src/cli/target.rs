@@ -294,7 +294,8 @@ fn validate_machine_command(args: &[String]) -> Result<(), String> {
     let supported = match command {
         "workspace" | "worktree" | "tab" | "pane" | "notification" => true,
         "agent" => {
-            !matches!(subcommand, "attach" | "dsh")
+            subcommand != "attach"
+                && subcommand != "dsh"
                 && !(subcommand == "explain"
                     && args[3..]
                         .iter()
