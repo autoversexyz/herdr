@@ -4553,7 +4553,12 @@ mod tests {
             .expect("shell job");
         assert_eq!(job.process_group_id, 10);
 
-        let driver = test_entry(20, 10, "herdr.exe", &[r"C:\Herdr\herdr.exe", "agent", "dsh"]);
+        let driver = test_entry(
+            20,
+            10,
+            "herdr.exe",
+            &[r"C:\Herdr\herdr.exe", "agent", "dsh"],
+        );
         let child = test_entry(21, 20, "dsh.exe", &["dsh.exe", "--profile", "acp"]);
         let job = super::select_pane_foreground_job(10, &[shell, driver, child, standalone])
             .expect("driver job");

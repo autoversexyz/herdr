@@ -462,7 +462,9 @@ mod tests {
         for command in [
             &["agent", "list"][..],
             &["agent", "wait", "w4:p1"],
-            &["agent", "start", "worker", "--kind", "dsh", "--pane", "w4:p1"],
+            &[
+                "agent", "start", "worker", "--kind", "dsh", "--pane", "w4:p1",
+            ],
             &["pane", "split", "w4:p1", "--direction", "right"],
             &["workspace", "list"],
             &["worktree", "create", "--branch", "feature"],

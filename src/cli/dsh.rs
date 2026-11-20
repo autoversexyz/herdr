@@ -58,7 +58,8 @@ pub(super) fn validate_option_value(value: &str) -> io::Result<()> {
 
 impl Options {
     pub(super) fn validate(&self) -> io::Result<()> {
-        if self.catalog && (self.resume.is_some() || self.initial.is_some() || self.journal.is_some())
+        if self.catalog
+            && (self.resume.is_some() || self.initial.is_some() || self.journal.is_some())
         {
             return Err(invalid(
                 "catalog inspection cannot resume, prompt, or write a journal",

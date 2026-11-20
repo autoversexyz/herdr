@@ -1455,7 +1455,11 @@ mod tests {
         }
         let job = crate::platform::ForegroundJob {
             process_group_id: 42,
-            processes: vec![foreground_process(42, "herdr", &["/tmp/herdr", "agent", "dsh"])],
+            processes: vec![foreground_process(
+                42,
+                "herdr",
+                &["/tmp/herdr", "agent", "dsh"],
+            )],
         };
         assert_eq!(
             identify_agent_in_job(&job),
