@@ -161,7 +161,9 @@ fn confirm_trust_selection(
         return Err(io::Error::other("trust menu changed after navigation"));
     }
     if !runtime_hosts_agent(runtime, Agent::Claude) {
-        return Err(io::Error::other("foreground agent changed after navigation"));
+        return Err(io::Error::other(
+            "foreground agent changed after navigation",
+        ));
     }
     send_prompt_key(runtime, seq, KeyCode::Enter)
 }
