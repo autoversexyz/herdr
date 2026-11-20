@@ -50,13 +50,13 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .zig-cache/p
-          key: zig-packages-v1-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - name: Fetch Zig packages (retry flaky mirrors)
         if: steps.zig-packages.outputs.cache-hit != 'true'
         working-directory: vendor/libghostty-vt
         run: |
           for attempt in 1 2 3 4 5 6; do
-            zig build --fetch && exit 0
+            zig build --fetch=all && exit 0
             echo "zig fetch attempt $attempt failed; retrying in $((attempt * 20)) s"
             sleep $((attempt * 20))
           done
@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .zig-cache/p
-          key: zig-packages-v1-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           cache-bin: false
@@ -99,13 +99,13 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .zig-cache/p
-          key: zig-packages-v1-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - name: Fetch Zig packages (retry flaky mirrors)
         if: steps.zig-packages.outputs.cache-hit != 'true'
         working-directory: vendor/libghostty-vt
         run: |
           for attempt in 1 2 3 4 5 6; do
-            zig build --fetch && exit 0
+            zig build --fetch=all && exit 0
             echo "zig fetch attempt $attempt failed; retrying in $((attempt * 20)) s"
             sleep $((attempt * 20))
           done
@@ -115,7 +115,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .zig-cache/p
-          key: zig-packages-v1-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           cache-bin: false
