@@ -1,0 +1,95 @@
+# Fork-only workflow (autoversexyz/herdr). Upstream CI runs on master and pull requests only;
+# this one checks and builds the fork's port branches for Session Hygiene's DSH stack.
+name: Fork port
+
+on:
+  push:
+    branches: ["port/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN_VERSION: 1.96.1
+  CARGO_PROFILE_DEV_DEBUG: "1"
+  CARGO_PROFILE_TEST_DEBUG: "1"
+  ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache
+  ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache
+
+concurrency:
+  group: fork-port-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-linux:
+    name: lint and test (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          components: rustfmt,clippy
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: just,cargo-nextest
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - uses: vercel-labs/setup-zig@83c1594f26b86da8a9a8ddd9b5ee5f3af0f96943 # v1.0.2
+        with:
+          version: 0.16.0
+      - name: Point ZIG at the installed compiler
+        run: echo "ZIG=$(command -v zig)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          cache-bin: false
+          key: fork-port-check
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo nextest run --locked --status-level fail --final-status-level fail --failure-output final --success-output never --no-fail-fast
+
+  release-linux:
+    name: release build (x86_64 linux gnu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+      - uses: vercel-labs/setup-zig@83c1594f26b86da8a9a8ddd9b5ee5f3af0f96943 # v1.0.2
+        with:
+          version: 0.16.0
+      - name: Point ZIG at the installed compiler
+        run: echo "ZIG=$(command -v zig)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          cache-bin: false
+          key: fork-port-release
+      - name: Build labelled release
+        env:
+          HERDR_BUILD_CHANNEL: dsh
+          HERDR_BUILD_ID: ${{ github.sha }}
+          HERDR_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          cargo build --release --locked -p herdr --bin herdr --target x86_64-unknown-linux-gnu
+          mkdir -p dist
+          cp target/x86_64-unknown-linux-gnu/release/herdr dist/herdr
+          ./dist/herdr --version | tee dist/VERSION
+          (cd dist && sha256sum herdr > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: herdr-x86_64-linux-gnu-${{ github.sha }}
+          path: dist/
+          retention-days: 30
