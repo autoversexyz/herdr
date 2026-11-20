@@ -3697,7 +3697,9 @@ impl PaneRuntime {
             .lock()
             .map_err(|_| std::io::Error::other("terminal content lock unavailable"))?;
         if !seq.is_multiple_of(2) || self.content_seq() != seq {
-            return Err(std::io::Error::other("terminal content changed before input"));
+            return Err(std::io::Error::other(
+                "terminal content changed before input",
+            ));
         }
         self.io
             .try_send_bytes(bytes)

@@ -346,7 +346,9 @@ pub(crate) fn from_matches(matches: &ArgMatches) -> Result<Operation, ParseError
                 return Err(ParseError::Usage("missing prompt answer JSON".into()));
             };
             if json.len() > 8192 {
-                return Err(ParseError::Usage("prompt answer request exceeds 8KiB".into()));
+                return Err(ParseError::Usage(
+                    "prompt answer request exceeds 8KiB".into(),
+                ));
             }
             let params = serde_json::from_str(json).map_err(std::io::Error::from)?;
             Operation::PromptAnswer(params)
