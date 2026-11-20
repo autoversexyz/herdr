@@ -108,7 +108,9 @@ pub(crate) mod tests {
         let mut omitted = report();
         omitted.tasks.clear();
         omitted.omitted = 3;
-        assert!(state.report(omitted, now + Duration::from_secs(20)).unwrap());
+        assert!(state
+            .report(omitted, now + Duration::from_secs(20))
+            .unwrap());
         assert_eq!(state.snapshot()[0].omitted, 3);
         state.expire(now + Duration::from_secs(40));
         let mut invalid = report();

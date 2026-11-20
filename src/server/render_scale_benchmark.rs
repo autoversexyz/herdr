@@ -633,13 +633,15 @@ async fn render_scale_profile() {
                 .activity
                 .report(report, Instant::now())
                 .unwrap();
-            pipeline.client.set_snapshot(Box::new(super::client_shell::snapshot(
-                &pipeline.app,
-                "bench-boot",
-                1,
-                None,
-                None,
-            )));
+            pipeline
+                .client
+                .set_snapshot(Box::new(super::client_shell::snapshot(
+                    &pipeline.app,
+                    "bench-boot",
+                    1,
+                    None,
+                    None,
+                )));
             (count, profile_pipeline(pipeline))
         });
         println!("{label} panes with 100 reported headless tasks");

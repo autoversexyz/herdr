@@ -670,7 +670,10 @@ mod tests {
 
         app.state
             .activity
-            .report(crate::app::activity::tests::report(), std::time::Instant::now())
+            .report(
+                crate::app::activity::tests::report(),
+                std::time::Instant::now(),
+            )
             .unwrap();
         let metadata = app.session_metadata_snapshot();
         assert_eq!(metadata.activity[0].tasks[0].request_id, "build-a");
