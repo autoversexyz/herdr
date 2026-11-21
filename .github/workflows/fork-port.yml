@@ -6,6 +6,11 @@ on:
   push:
     branches: ["port/**"]
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Commit to build in the macOS job (default: this workflow's own commit)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -153,5 +158,78 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: herdr-x86_64-linux-gnu-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+
+  release-macos:
+    name: release build (aarch64 apple darwin)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN_VERSION }}
+          targets: aarch64-apple-darwin
+      - uses: vercel-labs/setup-zig@83c1594f26b86da8a9a8ddd9b5ee5f3af0f96943 # v1.0.2
+        with:
+          version: 0.16.0
+      - name: Install macOS build tools
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install cmake ninja
+      - name: Point ZIG at the installed compiler
+        run: echo "ZIG=$(command -v zig)" >> "$GITHUB_ENV"
+      - name: Restore Zig packages
+        id: zig-packages
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .zig-cache/p
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+      - name: Seed translate-c from a GitHub mirror (codeberg outages)
+        if: steps.zig-packages.outputs.cache-hit != 'true'
+        working-directory: vendor/libghostty-vt
+        run: |
+          # macOS has no GNU timeout; perl's alarm bounds each attempt instead.
+          expected=translate_c-0.0.0-Q_BUWhVNBwDOEcIqub4VFPJPB6D9dgwzUMHTX5KWr8Xr
+          got=$(perl -e 'alarm shift; exec @ARGV' 300 zig fetch https://github.com/moderatelyConfused/translate-c/archive/4e879eb8aba615de112eabd1231ea6e01920cead.tar.gz || true)
+          echo "mirror hash: ${got:-none}"
+          if [ "$got" != "$expected" ]; then echo "::warning::translate-c mirror hash differs; relying on codeberg"; fi
+      - name: Fetch Zig packages (retry flaky mirrors)
+        if: steps.zig-packages.outputs.cache-hit != 'true'
+        working-directory: vendor/libghostty-vt
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            perl -e 'alarm shift; exec @ARGV' 300 zig build --fetch=all && exit 0
+            echo "zig fetch attempt $attempt failed; retrying in $((attempt * 20)) s"
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - name: Save Zig packages
+        if: steps.zig-packages.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .zig-cache/p
+          key: zig-packages-v2-${{ runner.os }}-${{ hashFiles('vendor/libghostty-vt/build.zig.zon') }}
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          cache-bin: false
+          key: fork-port-release-macos
+      - name: Build labelled release
+        run: |
+          # Label the binary with the source commit actually built, as the Linux job does.
+          sha=$(git rev-parse HEAD)
+          export HERDR_BUILD_CHANNEL=dsh HERDR_BUILD_ID=$sha HERDR_BUILD_COMMIT=$sha
+          cargo build --release --locked -p herdr --bin herdr --target aarch64-apple-darwin
+          mkdir -p dist
+          cp target/aarch64-apple-darwin/release/herdr dist/herdr
+          ./dist/herdr --version | tee dist/VERSION
+          (cd dist && shasum -a 256 herdr > SHA256SUMS)
+          cat dist/SHA256SUMS
+          echo "SOURCE_SHA=$sha" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: herdr-aarch64-apple-darwin-${{ env.SOURCE_SHA }}
           path: dist/
           retention-days: 30
